@@ -1,0 +1,14 @@
+node_modules/
+build/
+dist/
+artifacts/
+release/
+.tools/
+tmp/
+wasm/
+src/simulation/generated/
+src/data/
+tests/fixtures/
+study/
+package-lock.json
+yoosh.html

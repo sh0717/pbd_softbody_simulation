@@ -1,0 +1,31 @@
+# Unreal Engine 소스 규칙을 독립 C++20 프로젝트에 적용합니다.
+# 참조 근거와 프로젝트 선택은 docs/cpp-coding-standard.md를 따릅니다.
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++20
+UseTab: ForContinuationAndIndentation
+TabWidth: 4
+IndentWidth: 4
+ContinuationIndentWidth: 4
+AlignAfterOpenBracket: DontAlign
+AlignOperands: DontAlign
+NamespaceIndentation: All
+IndentCaseLabels: true
+IndentAccessModifiers: false
+AccessModifierOffset: -4
+# 선언·대입·계산·조건식과 인자 목록은 한 줄에 유지합니다.
+# 중괄호와 주석의 구조적인 줄바꿈은 보존합니다.
+ColumnLimit: 0
+ReflowComments: false
+PointerAlignment: Left
+DerivePointerAlignment: false
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortLambdasOnASingleLine: None
+LambdaBodyIndentation: OuterScope
+BreakBeforeBraces: Allman
+BreakConstructorInitializers: BeforeComma
+InsertBraces: true
+SeparateDefinitionBlocks: Always

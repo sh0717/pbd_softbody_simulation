@@ -1,0 +1,44 @@
+{
+  "name": "pbd-softbody-lab",
+  "version": "1.0.2",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "build": "node tools/build.mjs",
+    "build:core": "node tools/build-core.mjs",
+    "build:all": "npm run build:core && npm run build",
+    "test": "node tools/test.mjs",
+    "test:native": "node tools/native.mjs test",
+    "test:browser": "node tests/browser/browser.mjs",
+    "benchmark": "node tools/benchmarks/physics.mjs",
+    "benchmark:compare": "node tools/benchmarks/compare-runtime.mjs",
+    "check:format": "node tools/style.mjs",
+    "format": "node tools/style.mjs --write",
+    "check:structure": "node tools/check-structure.mjs",
+    "check": "npm run check:format && npm run check:structure && npm run check:runtime && npm test",
+    "check:runtime": "node tools/check-runtime.mjs",
+    "verify:unification": "node tools/verify-unification.mjs",
+    "check:quality": "node tools/quality.mjs",
+    "verify:portfolio": "node tools/verify-portfolio.mjs",
+    "build:web": "node tools/build.mjs",
+    "build:exe": "node tools/package-desktop.mjs",
+    "test:exe": "node tests/desktop/desktop.mjs",
+    "release:exe": "node tools/release-desktop.mjs",
+    "build:native": "node tools/native.mjs build",
+    "build:native:release": "node tools/native.mjs build --release",
+    "test:native:release": "node tools/native.mjs test --release",
+    "check:layout": "node tools/check-layout.mjs",
+    "test:distribution": "node tests/browser/distribution.mjs"
+  },
+  "devDependencies": {
+    "electron": "44.9.3",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.25.10",
+    "playwright": "1.55.1",
+    "prettier": "3.6.2"
+  },
+  "dependencies": {
+    "three": "0.139.2"
+  }
+}

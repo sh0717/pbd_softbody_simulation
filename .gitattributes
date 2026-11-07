@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.wasm binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.mp4 binary

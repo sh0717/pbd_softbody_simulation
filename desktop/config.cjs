@@ -1,0 +1,22 @@
+module.exports = {
+  appId: 'local.simulation.pbd',
+  productName: 'PBD Softbody Lab',
+  artifactStem: 'PBD-Softbody-Lab',
+  scheme: 'pbd',
+  entry: 'index.html',
+  backgroundColor: '#fafbf7',
+  csp: "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+  assets: [
+    'index.html',
+    'styles.css',
+    'app.js',
+    'data/bunny-data.js',
+    'simulation/physics.js',
+    'wasm/pbd_core.js',
+    'wasm/pbd_core.wasm',
+    'vendor/three.min.js',
+    'vendor/OrbitControls.js',
+    'THREE-LICENSE.txt',
+  ].map((file) => [`dist/${file}`, file]),
+  qaFiles: [['tests/browser/checks.js', 'checks.js']],
+};

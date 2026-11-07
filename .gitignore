@@ -1,0 +1,77 @@
+# Dependencies, SDKs, build outputs and local verification evidence
+.tools/
+node_modules/
+artifacts/
+build/
+release/
+tmp/
+.venv/
+__pycache__/
+.pytest_cache/
+coverage/
+test-results/
+playwright-report/
+*.pyc
+*.obj
+*.exe
+*.log
+
+# Machine-specific editor and CMake configuration
+CMakeUserPresets.json
+.vscode/c_cpp_properties.json
+*.local.code-workspace
+.vs/
+*.user
+*.suo
+
+# Local assignment archive and separate study materials; preserve on disk
+/12_SoftBodyDynamics.pdf
+/pbd_report.pdf
+/PBD_XPBD_학습교재.pdf
+/vedio1_2.mp4
+/vedio_1.mp4
+/vedio_2.mp4
+/vedio_3.mp4
+/추가설명.txt
+/study/
+/build_report.py
+/tests/fixtures/pbd_report-original.pdf
+/papers/PBD_Mueller_2006.pdf
+/papers/XPBD_Macklin_2016.pdf
+/papers/Small_Steps_Macklin_2019.pdf
+
+# Local environment and operating-system files
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+Desktop.ini
+.codex/
+.agents/
+
+# Keep wasm/{pbd_core.js,pbd_core.wasm,build-manifest.json}, papers/sources.json,
+# and the JS/HTML regression fixtures in Git. Do not ignore wasm/ or *.py globally.
+
+
+# release/ also contains unified EXE checksums and release-manifest.json.
+
+# Local instructions, legacy checks and historical reports; publish shared docs only.
+/AGENTS.md
+/tests/legacy/
+/docs/*
+!/docs/architecture.md
+!/docs/code-reading.md
+!/docs/code-review-guide.md
+!/docs/cpp-architecture.md
+!/docs/cpp-coding-standard.md
+!/docs/desktop.md
+!/docs/github-upload.md
+!/docs/native-layout.md
+!/docs/portfolio-review.md
+!/docs/portfolio-score.json
+!/docs/project-conventions.md
+!/docs/project-layout.md
+!/docs/quality-standard.md
+!/docs/vscode-development.md
+!/docs/xpbd-lambda.md

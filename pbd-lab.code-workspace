@@ -1,0 +1,13 @@
+{
+  "folders": [
+    {
+      "name": "PBD Lab - 현재 소스",
+      "path": ".",
+    },
+  ],
+  "settings": {
+    "window.title": "PBD Lab · ${activeEditorShort}${separator}${appName}",
+    "workbench.editor.labelFormat": "medium",
+    "search.quickOpen.includeHistory": false,
+  },
+}

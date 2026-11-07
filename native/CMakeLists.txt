@@ -1,0 +1,32 @@
+# The manifest is shared by native and Emscripten builds; paths are project-relative.
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/sources.txt" PBD_SOURCES)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS sources.txt)
+# Platform bindings remain in the manifest, but the native core has no Emscripten dependency.
+list(FILTER PBD_SOURCES EXCLUDE REGEX "/bindings/")
+list(TRANSFORM PBD_SOURCES PREPEND "${PROJECT_SOURCE_DIR}/")
+add_library(pbd_core STATIC ${PBD_SOURCES})
+target_include_directories(pbd_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_compile_features(pbd_core PUBLIC cxx_std_20)
+set_target_properties(pbd_core PROPERTIES CXX_EXTENSIONS OFF)
+if(MSVC)
+  target_compile_options(pbd_core PRIVATE /W4 /WX /utf-8 /permissive-)
+else()
+  target_compile_options(pbd_core PRIVATE -Wall -Wextra -Werror -ffp-contract=off)
+endif()
+
+if(BUILD_TESTING)
+  add_executable(pbd_native_tests "${PROJECT_SOURCE_DIR}/tests/native/test_physics.cpp")
+  add_executable(pbd_refactoring_tests "${PROJECT_SOURCE_DIR}/tests/native/test_refactoring.cpp")
+  foreach(PBD_TEST IN ITEMS pbd_native_tests pbd_refactoring_tests)
+    target_link_libraries(${PBD_TEST} PRIVATE pbd_core)
+    # Preserve the documented debugger executable paths after add_subdirectory.
+    set_target_properties(${PBD_TEST} PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/$<CONFIG>")
+    if(MSVC)
+      target_compile_options(${PBD_TEST} PRIVATE /W4 /WX /utf-8 /permissive-)
+    else()
+      target_compile_options(${PBD_TEST} PRIVATE -Wall -Wextra -Werror -ffp-contract=off)
+    endif()
+    add_test(NAME ${PBD_TEST} COMMAND ${PBD_TEST})
+  endforeach()
+endif()

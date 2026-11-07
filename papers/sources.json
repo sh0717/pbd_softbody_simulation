@@ -1,0 +1,38 @@
+{
+  "downloaded_on": "2026-10-15",
+  "papers": [
+    {
+      "file": "PBD_Mueller_2006.pdf",
+      "title": "Position Based Dynamics",
+      "year": 2006,
+      "authors": "Matthias Müller; Bruno Heidelberger; Marcus Hennix; John Ratcliff",
+      "url": "https://matthias-research.github.io/pages/publications/posBasedDyn.pdf",
+      "doi": "10.2312/PE/vriphys/vriphys06/071-080",
+      "pages": 10,
+      "sha256": "8823d1b0549e84c56e0c3cbbf5db3cd00dbd59858835f4d012b64604aac2f4b0",
+      "bytes": 2852432
+    },
+    {
+      "file": "XPBD_Macklin_2016.pdf",
+      "title": "XPBD: Position-Based Simulation of Compliant Constrained Dynamics",
+      "year": 2016,
+      "authors": "Miles Macklin; Matthias Müller; Nuttapong Chentanez",
+      "url": "https://mmacklin.com/xpbd.pdf",
+      "doi": "10.1145/2994258.2994272",
+      "pages": 6,
+      "sha256": "2e8a2030db7999bd425e469bbb798387b74151e3e10c1625d269a7cd75fb0395",
+      "bytes": 2041988
+    },
+    {
+      "file": "Small_Steps_Macklin_2019.pdf",
+      "title": "Small Steps in Physics Simulation",
+      "year": 2019,
+      "authors": "Miles Macklin; Kier Storey; Michelle Lu; Pierre Terdiman; Nuttapong Chentanez; Stefan Jeschke; Matthias Müller",
+      "url": "https://matthias-research.github.io/pages/publications/smallsteps.pdf",
+      "doi": "10.1145/3309486.3340247",
+      "pages": 7,
+      "sha256": "658cb1428a7c34af6419a59fcb1652f25dd8f6cca9472687b337ed9f2f0efca8",
+      "bytes": 8208308
+    }
+  ]
+}
