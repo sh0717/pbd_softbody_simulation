@@ -19,15 +19,19 @@ export async function checkWasmManifest(root, manifest, moduleStem = 'pbd_core')
   assert.equal(manifest.sdk?.version, '4.0.23', 'Unexpected Emscripten version');
   assert.equal(manifest.languageStandard, 'c++20', 'Unexpected C++ standard');
   assert.equal(manifest.textNormalization, 'LF', 'Unexpected text hashing contract');
+
   const sources = ['native/sources.txt', 'tools/build_wasm.py'];
+
   async function visit(directory) {
     for (const entry of await readdir(path.join(root, directory), { withFileTypes: true })) {
       const file = `${directory}/${entry.name}`;
+
       if (entry.isDirectory()) await visit(file);
       else if (/\.(?:cpp|h)$/.test(entry.name)) sources.push(file);
     }
   }
   await visit('native');
+
   assert.deepEqual(
     Object.keys(manifest.sourceHashes).sort(),
     sources.sort(),
@@ -38,9 +42,11 @@ export async function checkWasmManifest(root, manifest, moduleStem = 'pbd_core')
     [`wasm/${moduleStem}.js`, `wasm/${moduleStem}.wasm`].sort(),
     'Unexpected deployed outputs',
   );
+
   for (const hashes of [manifest.sourceHashes, manifest.outputHashes]) {
     for (const [file, expected] of Object.entries(hashes)) {
       const actual = contentHash(await readFile(path.join(root, file)), file.endsWith('.wasm'));
+
       assert.equal(actual, expected, `${file}: Wasm provenance changed; run npm run build:core`);
     }
   }
@@ -49,16 +55,30 @@ export async function checkWasmManifest(root, manifest, moduleStem = 'pbd_core')
 async function main() {
   const root = fileURLToPath(new URL('../', import.meta.url));
   const boidsChecker = path.join(root, 'tools/check-core.mjs');
+
   if (existsSync(boidsChecker)) {
     const { checkCore } = await import(pathToFileURL(boidsChecker));
+
     await checkCore();
   } else {
     const manifest = JSON.parse(
       await readFile(path.join(root, 'wasm/build-manifest.json'), 'utf8'),
     );
     const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+
     await checkWasmManifest(root, manifest, pkg.wasmModule ?? 'pbd_core');
+
+    if (pkg.name === 'pbd-softbody-lab') {
+      const threaded = JSON.parse(
+        await readFile(path.join(root, 'wasm/build-manifest-threaded.json'), 'utf8'),
+      );
+
+      await checkWasmManifest(root, threaded, 'pbd_core_threaded');
+
+      assert.ok(threaded.command.includes('-pthread'), 'Threaded runtime must enable pthreads');
+    }
   }
+
   console.log('Deployed Wasm matches current source and recorded output hashes.');
 }
 

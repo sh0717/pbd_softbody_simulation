@@ -9,6 +9,7 @@ export class ControlPanel {
     this.events = new AbortController();
     this.on = (id, type, callback) =>
       this.$(id).addEventListener(type, callback, { signal: this.events.signal });
+
     try {
       this.on('run-button', 'click', () => this.actions.setRunning(!this.getState().running));
       this.on('restart-button', 'click', this.actions.restart);
@@ -20,6 +21,7 @@ export class ControlPanel {
       this.on('softness', 'input', () => this.updateMaterial());
       this.on('Slider01', 'input', (event) => {
         const milliseconds = Number(event.target.value);
+
         this.actions.setTimeStep(milliseconds === 0 ? 0 : Math.max(0.001, milliseconds * 0.001));
         event.target.value = this.world.dt * 1000;
         this.$('SliderValue01').textContent = `${this.world.dt.toFixed(4)} s`;
@@ -48,18 +50,23 @@ export class ControlPanel {
         this.actions.setBumperStrength(Math.max(0, Math.min(12, Number(event.target.value) || 0))),
       );
       this.on('remove-obstacle', 'click', this.actions.removeObstacle);
+
       for (const name of ['position-x', 'position-y', 'position-z', 'size-x', 'size-y', 'size-z']) {
         for (const suffix of ['', '-number'])
           this.on(name + suffix, 'input', (event) => {
             if (event.target.value.trim() === '') return;
+
             let value = Number(event.target.value);
+
             if (!Number.isFinite(value)) return;
+
             value = Math.max(Number(event.target.min), Math.min(Number(event.target.max), value));
             this.actions.editObstacle(name, value);
           });
       }
     } catch (error) {
       this.dispose();
+
       throw error;
     }
   }
@@ -68,6 +75,7 @@ export class ControlPanel {
     this.$('soft-count').textContent = this.world.softBodies.length;
     this.$('ball-count').textContent = this.world.balls.length;
     this.$('obstacle-count').textContent = this.world.obstacles.length;
+
     this.$('add-soft').disabled = this.world.softBodies.length >= 10;
     this.$('add-ball').disabled = this.world.balls.length >= 10;
     this.$('add-box').disabled = this.world.obstacles.length >= 10;
@@ -75,24 +83,31 @@ export class ControlPanel {
 
   syncObstacle() {
     const obstacle = this.getState().selectedObstacle;
+
     this.$('obstacle-properties').disabled = !obstacle;
     this.$('obstacle-properties').hidden = !obstacle;
     this.$('obstacle-list').value = obstacle ? String(obstacle.identifier) : '';
+
     if (!obstacle) return;
+
     this.$('obstacle-bumper').checked = obstacle.bumper;
     this.$('bumper-strength').value = obstacle.bumperStrength;
     this.$('bumper-strength').disabled = !obstacle.bumper;
     this.$('bumper-strength-value').textContent = `${obstacle.bumperStrength.toFixed(1)} m/s`;
+
     const values = {};
     const limits = this.obstacleLimits(obstacle);
+
     'xyz'.split('').forEach((axis, index) => {
       values[`position-${axis}`] = obstacle.position[index];
       values[`size-${axis}`] = obstacle.size[index];
+
       for (const suffix of ['', '-number']) {
         this.$(`position-${axis}${suffix}`).min = -limits[index];
         this.$(`position-${axis}${suffix}`).max = limits[index];
       }
     });
+
     for (const [name, value] of Object.entries(values)) {
       for (const suffix of ['', '-number']) this.$(name + suffix).value = Number(value.toFixed(3));
     }
@@ -102,9 +117,11 @@ export class ControlPanel {
     this.$('obstacle-list').replaceChildren(
       new Option(this.world.obstacles.length ? '장애물을 선택하세요' : '장애물 없음', ''),
     );
+
     for (const obstacle of this.world.obstacles) {
       this.$('obstacle-list').add(new Option(`Box ${obstacle.identifier}`, obstacle.identifier));
     }
+
     this.syncObstacle();
     this.updateCounts();
   }
@@ -121,6 +138,7 @@ export class ControlPanel {
 
   updateMaterial() {
     const softness = Number(this.$('softness').value) / 100;
+
     this.actions.setMaterial(softness);
     this.$('softness-value').textContent =
       softness < 0.3 ? '단단함' : softness < 0.65 ? '균형' : '부드러움';
@@ -128,6 +146,7 @@ export class ControlPanel {
 
   updateStatus() {
     const { running, fps, physicsMs, droppedSteps, bumperHitCount } = this.getState();
+
     this.$('fps-value').textContent = fps ? Math.round(fps) : '—';
     this.$('physics-value').textContent = running && this.world.dt > 0 ? physicsMs.toFixed(2) : '—';
     this.$('simulation-status').textContent =
@@ -140,13 +159,16 @@ export class ControlPanel {
       this.world.mode.toUpperCase() +
       (fps ? ` · ${Math.round(fps)} FPS` : ' SOLVER') +
       (running && this.world.dt > 0 ? ` · ${physicsMs.toFixed(2)} ms` : '');
+
     const stats = this.world.softContactStats;
+
     this.$('contact-status').textContent =
       `상호 접촉 ${stats.projections || stats.contacts || 0} · 후보 검사 ${stats.candidateTests || 0} · 범퍼 ${bumperHitCount}회`;
   }
 
   updateRunning() {
     const { running } = this.getState();
+
     this.$('run-button').textContent = running ? 'Ⅱ 일시정지' : '▶ 실행';
     this.$('run-button').setAttribute('aria-pressed', String(running));
     this.updateStatus();
@@ -155,8 +177,10 @@ export class ControlPanel {
   isWireframe() {
     return this.$('wireframe').checked;
   }
+
   dispose() {
     if (this.disposed) return;
+
     this.disposed = true;
     this.events.abort();
   }

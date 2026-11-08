@@ -3,6 +3,7 @@ import { ControlPanel } from './ui/controls.js';
 import { PickingController } from './ui/picking.js';
 import { ExperimentController } from './experiment-controller.mjs';
 import { runCleanup } from './lifecycle.mjs';
+import { loadCoreOptions } from './load-core.mjs';
 
 const MAX_FRAME_ELAPSED_SECONDS = 0.1;
 const MAX_CATCH_UP_STEPS = 6;
@@ -13,14 +14,18 @@ const PHYSICS_SAMPLE_WEIGHT = 0.1;
 
 let cleanup = () => {};
 let failed = false;
+
 function fail(error) {
   if (failed) return;
+
   failed = true;
+
   try {
     cleanup();
   } catch (cleanupError) {
     console.error(cleanupError);
   }
+
   document.getElementById('error-banner').hidden = false;
   document.getElementById('error-banner').textContent =
     `실행 오류: ${error.message}. 페이지를 다시 불러와 주세요.`;
@@ -32,17 +37,12 @@ function fail(error) {
 async function start() {
   const $ = (id) => document.getElementById(id);
   const { THREE, PBDPhysics, PBD_BUNNY_DATA } = window;
+
   if (!THREE || !PBDPhysics || !PBD_BUNNY_DATA) throw new Error('필수 파일을 불러오지 못했습니다');
+
   $('simulation-status').textContent = '물리 엔진을 불러오는 중입니다.';
-  const coreOptions = {};
-  // 배포 번들은 Boids처럼 Wasm을 내장하여 file://에서도 네트워크 요청 없이 초기화합니다.
-  // 빌드하지 않은 개발 원본에는 이 상수가 없으므로 기존 HTTP 로딩 경로를 사용합니다.
-  if (typeof PBD_CORE_WASM_BASE64 === 'string') {
-    coreOptions.wasmBinary = Uint8Array.from(atob(PBD_CORE_WASM_BASE64), (character) =>
-      character.charCodeAt(0),
-    );
-  }
-  await PBDPhysics.init(coreOptions);
+  await PBDPhysics.init(await loadCoreOptions());
+
   let world;
   let view;
   let ui;
@@ -51,6 +51,7 @@ async function start() {
   let animationFrame = 0;
   let disposed = false;
   const events = new AbortController();
+
   cleanup = dispose;
   world = new PBDPhysics.PhysicsWorld({
     dt: 1 / 60,
@@ -62,14 +63,17 @@ async function start() {
     restitution: 0.25,
     damping: 0.25,
   });
+
   // Scaled rest geometry is shared by simulation and rendering.
   const bunnyData = { ...PBD_BUNNY_DATA, verts: PBD_BUNNY_DATA.verts.map((value) => value * 3) };
+
   view = new PhysicsScene({
     THREE,
     viewport: $('viewport'),
     bounds: world.bounds,
     bunnyData,
   });
+
   let accumulatedSeconds = 0;
   let previousFrameMs = null;
   let physicsMs = 0;
@@ -93,6 +97,7 @@ async function start() {
       bumperHitCount = 0;
     },
   });
+
   const getState = () => ({
     selectedBody: experiment.selectedBody,
     selectedObstacle: experiment.selectedObstacle,
@@ -102,6 +107,7 @@ async function start() {
     droppedSteps,
     bumperHitCount,
   });
+
   ui = new ControlPanel({
     world,
     getState,
@@ -142,17 +148,22 @@ async function start() {
   experiment.addSoft([2.2, -2.25, 0.5]);
   experiment.addBall([0.5, 2.3, 1.4]);
   experiment.selectObstacle(null);
+
   ui.updateMaterial();
   ui.updateStatus();
 
   function stepPhysics(nowMs) {
     const startedMs = performance.now();
+
     world.step();
+
     for (const hit of world.bumperHits) {
       view.flashObstacle(hit.obstacle, nowMs);
       bumperHitCount++;
     }
+
     const elapsedMs = performance.now() - startedMs;
+
     physicsMs = physicsMs
       ? physicsMs * PHYSICS_HISTORY_WEIGHT + elapsedMs * PHYSICS_SAMPLE_WEIGHT
       : elapsedMs;
@@ -165,32 +176,42 @@ async function start() {
       previousFrameMs === null
         ? 0
         : Math.min((nowMs - previousFrameMs) / 1000, MAX_FRAME_ELAPSED_SECONDS);
+
     previousFrameMs = nowMs;
+
     if (!experiment.running || world.dt === 0) {
       accumulatedSeconds = 0;
+
       return;
     }
+
     accumulatedSeconds += elapsedSeconds;
+
     let steps = 0;
+
     while (accumulatedSeconds + STEP_TOLERANCE_SECONDS >= world.dt && steps < MAX_CATCH_UP_STEPS) {
       stepPhysics(nowMs);
       accumulatedSeconds -= world.dt;
       steps++;
     }
+
     if (steps === MAX_CATCH_UP_STEPS && accumulatedSeconds >= world.dt) {
       droppedSteps += Math.floor(accumulatedSeconds / world.dt);
       accumulatedSeconds %= world.dt;
     }
+
     if (steps) experiment.syncBodies();
   }
 
   function updateFrameStatistics(nowMs) {
     fpsFrames++;
+
     if (nowMs - fpsSampleStartMs >= STATUS_SAMPLE_INTERVAL_MS) {
       fps = (fpsFrames * 1000) / Math.max(1, nowMs - fpsSampleStartMs);
       fpsSampleStartMs = nowMs;
       fpsFrames = 0;
     }
+
     if (nowMs - lastStatusUpdateMs >= STATUS_SAMPLE_INTERVAL_MS) {
       ui.updateStatus();
       lastStatusUpdateMs = nowMs;
@@ -199,6 +220,7 @@ async function start() {
 
   function frame(nowMs) {
     if (disposed) return;
+
     try {
       advancePhysics(nowMs);
       view.render(nowMs, experiment.selectedObstacle);
@@ -208,8 +230,10 @@ async function start() {
       fail(error);
     }
   }
+
   function dispose() {
     if (disposed) return;
+
     disposed = true;
     runCleanup([
       () => cancelAnimationFrame(animationFrame),
@@ -238,15 +262,19 @@ async function start() {
     syncBodies: () => experiment.syncBodies(),
     restoreCamera: () => view.restoreCamera(),
     dispose,
+
     get running() {
       return experiment.running;
     },
+
     get selectedBody() {
       return experiment.selectedBody;
     },
+
     get selectedObstacle() {
       return experiment.selectedObstacle;
     },
+
     get droppedSteps() {
       return droppedSteps;
     },

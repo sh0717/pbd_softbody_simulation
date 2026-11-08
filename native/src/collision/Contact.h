@@ -64,7 +64,7 @@ struct FContact
 	std::array<double, 3> Weights{};
 };
 
-struct FStats
+struct FSoftContactStats
 {
 	// 경계 구·상자 검사를 통과한 연체 쌍의 집계입니다. 구체 쌍 검사 횟수는 포함하지 않습니다.
 	double BroadPhasePairs = 0;
@@ -90,7 +90,7 @@ struct FStats
 	// BVH 순회 중 최근접 점을 직접 계산한 표면 삼각형 검사 횟수입니다.
 	double SurfaceTriangleTests = 0;
 
-	void Accumulate(const FStats& Stats)
+	void Accumulate(const FSoftContactStats& Stats)
 	{
 		CandidateTests += Stats.CandidateTests;
 		Contacts += Stats.Contacts;

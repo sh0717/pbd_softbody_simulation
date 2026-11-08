@@ -7,4 +7,5 @@ const result = spawnSync(process.env.PYTHON || 'python', ['-X', 'utf8', 'tools/b
   stdio: 'inherit',
   windowsHide: true,
 });
+
 if (result.error || result.status !== 0) throw result.error || new Error('Wasm core build failed.');

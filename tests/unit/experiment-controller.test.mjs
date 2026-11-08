@@ -51,16 +51,20 @@ function fixture() {
   });
   controller.ui = ui;
   controller.picking = { endDrag: () => calls.push(['endDrag']) };
+
   return {
     controller,
     world,
     calls,
+
     get timingResets() {
       return timingResets;
     },
+
     get restarts() {
       return restarts;
     },
+
     dispose() {
       controller.dispose();
       world.dispose();
@@ -70,17 +74,24 @@ function fixture() {
 
 test('bound commands keep body and obstacle selection exclusive and release the previous drag', () => {
   const f = fixture();
+
   try {
     const { addSoft, addObstacle } = f.controller.actions;
     const body = addSoft([0, 0, 0]);
+
     f.controller.selection.selectBody(body);
     f.controller.selection.setDragTarget([1, 2, 3]);
+
     assert.deepEqual(body.dragTarget, [1, 2, 3]);
+
     const obstacle = addObstacle('box', { position: [5, 5, 5], size: [1, 1, 1] });
+
     assert.equal(f.controller.selection.body, null);
     assert.equal(f.controller.selection.obstacle, obstacle);
     assert.equal(body.dragTarget, null);
+
     f.controller.selection.selectBody(body);
+
     assert.equal(f.controller.selection.obstacle, null);
     assert.equal(f.controller.selection.body, body);
   } finally {
@@ -90,10 +101,13 @@ test('bound commands keep body and obstacle selection exclusive and release the 
 
 test('experiment commands reject non-box obstacles without changing the experiment', () => {
   const f = fixture();
+
   try {
     const box = f.controller.addObstacle('box');
     const nextId = f.controller.nextObstacleId;
+
     f.calls.length = 0;
+
     for (const add of [
       () => f.controller.actions.addObstacle('sphere'),
       () => f.controller.actions.addObstacle('box', { shape: 'sphere' }),
@@ -104,10 +118,13 @@ test('experiment commands reject non-box obstacles without changing the experime
       assert.equal(f.controller.selection.obstacle, box);
       assert.equal(f.calls.length, 0);
     }
+
     assert.equal(f.controller.actions.setObstacleShape, undefined);
+
     for (const name of ['radius', 'shape', 'size-q', 'size-x-extra']) {
       assert.throws(() => f.controller.actions.editObstacle(name, 2), TypeError);
     }
+
     assert.equal(f.calls.length, 0);
   } finally {
     f.dispose();
@@ -116,10 +133,13 @@ test('experiment commands reject non-box obstacles without changing the experime
 
 test('a rejected obstacle edit preserves physics and the displayed geometry', () => {
   const f = fixture();
+
   try {
     const obstacle = f.controller.addObstacle('box', { position: [5, 5, 5], size: [1, 1, 1] });
     const before = JSON.stringify(obstacle);
+
     f.calls.length = 0;
+
     assert.throws(() => f.controller.actions.editObstacle('size-x', -1), TypeError);
     assert.equal(JSON.stringify(obstacle), before);
     assert.equal(
@@ -127,7 +147,9 @@ test('a rejected obstacle edit preserves physics and the displayed geometry', ()
       0,
       'a rejected edit must not publish a new view or settle a different state',
     );
+
     f.controller.actions.editObstacle('size-x', 2);
+
     assert.equal(obstacle.size[0], 2);
     assert.ok(f.calls.some(([name, value]) => name === 'syncObstacle' && value === obstacle));
   } finally {
@@ -137,20 +159,29 @@ test('a rejected obstacle edit preserves physics and the displayed geometry', ()
 
 test('time commands reset only accepted scheduling changes; restart preserves edited obstacles', () => {
   const f = fixture();
+
   try {
     const body = f.controller.addSoft([0, 0, 0]);
     const obstacle = f.controller.addObstacle('box', { position: [5, 5, 5], size: [1, 1, 1] });
+
     f.controller.actions.editObstacle('size-x', 2);
+
     assert.throws(() => f.controller.actions.setTimeStep(-1), RangeError);
     assert.equal(f.timingResets, 0);
+
     f.controller.actions.setTimeStep(0);
+
     assert.equal(f.world.dt, 0);
     assert.equal(f.timingResets, 1);
+
     f.controller.actions.setRunning(true);
+
     assert.equal(f.controller.running, true);
     assert.equal(f.timingResets, 2);
+
     f.world.moveBody(body, [0, 2, 0]);
     f.controller.actions.restart();
+
     assert.deepEqual(Array.from(body.positions), tetra.verts);
     assert.equal(f.world.simulationTime, 0);
     assert.equal(obstacle.size[0], 2);
@@ -165,13 +196,18 @@ test('time commands reset only accepted scheduling changes; restart preserves ed
 test('retained command callbacks reject after repeated controller disposal', () => {
   const f = fixture();
   const actions = f.controller.actions;
+
   try {
     f.controller.addSoft([0, 0, 0]);
+
     const count = f.world.bodies.length;
+
     f.controller.dispose();
     f.controller.dispose();
+
     assert.equal(f.controller.selection.body, null);
     assert.equal(f.controller.selection.obstacle, null);
+
     for (const action of [
       () => actions.addBall(),
       () => actions.setRunning(true),
@@ -179,6 +215,7 @@ test('retained command callbacks reject after repeated controller disposal', () 
       () => actions.setMode('pbd'),
     ])
       assert.throws(action, /종료/);
+
     assert.equal(f.world.bodies.length, count);
   } finally {
     f.dispose();

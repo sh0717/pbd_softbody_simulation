@@ -4,6 +4,7 @@
 #include "collision/SoftContactSolver.h"
 #include "simulation/Ball.h"
 #include "simulation/ConstraintSolver.h"
+#include "simulation/ParallelExecutor.h"
 #include "simulation/SoftBody.h"
 #include "simulation/TimeIntegrator.h"
 #include <memory>
@@ -17,22 +18,34 @@
 class FPhysicsWorld
 {
 public:
+	/** 작업자 상한이 0이면 순차 실행합니다. 외부 호출은 내부 병렬화 여부와 무관하게 직렬화합니다. */
+	explicit FPhysicsWorld(std::size_t WorkerLimit = FParallelExecutor::DefaultWorkerCount())
+		: ConstraintExecutor(WorkerLimit)
+	{
+	}
+
+	/** 제약 계산용으로 생성된 백그라운드 스레드 수입니다. 호출 스레드는 제외합니다. */
+	std::size_t GetConstraintWorkerCount() const noexcept
+	{
+		return ConstraintExecutor.GetWorkerCount();
+	}
+
 	/**
 	 * 연체를 생성하여 월드가 단독 소유하고 비소유 관찰 포인터를 반환합니다.
 	 * @note 월드가 파괴되면 반환 포인터와 모든 입자 뷰가 무효화됩니다.
 	 */
-	FSoftBody* AddSoft(std::vector<double> Positions, FIndices Edges, FIndices Tetrahedra, FIndices Surface, FVector3D Offset = {}, std::vector<double> InverseMasses = {}, FVector3D Velocity = {});
+	FSoftBody* AddSoft(std::vector<double> Positions, FIndices Edges, FIndices Tetrahedra, FIndices Surface, FVector3D Offset = {}, std::vector<double> InverseMasses = {}, FVector3D Velocity = {}, FOperationResult* OutResult = nullptr);
 
 	/** 단일 입자 구체를 생성하여 월드가 소유하고 관찰 포인터를 반환합니다. */
-	FBall* AddBall(double Radius, FVector3D Position, FVector3D Velocity = {}, double InverseMass = 1);
+	FBall* AddBall(double Radius, FVector3D Position, FVector3D Velocity = {}, double InverseMass = 1, FOperationResult* OutResult = nullptr);
 
 	/**
 	 * 검증한 초 단위 Dt만큼 위치 예측 → 제약·접촉 반복 → 속도 복원·반발·범퍼를 진행합니다.
-	 * @return 양수 스텝 성공은 true, 유효한 dt=0은 false입니다. 검증 실패는 예외이며
+	 * @return 양수 스텝 성공은 true, 유효한 dt=0은 false입니다. 검증 실패는 OutResult로 반환하며
 	 * dt=0과 검증 실패 모두 입자·승수·통계·충돌 이벤트·시간을 보존합니다.
-	 * @note 실행 중 할당 실패의 롤백은 보장하지 않습니다. 초기화·재준비 후 재사용합니다.
+	 * @note 동적 할당 자원 소진은 프로세스 종료 정책을 따릅니다.
 	 */
-	bool Step(double Dt);
+	bool Step(double Dt, FOperationResult* OutResult = nullptr);
 
 	/** 시뮬레이션 시간을 진행하지 않고 겹침을 해소합니다. 이동한 입자의 속도만 0으로 만듭니다. */
 	void Settle();
@@ -47,7 +60,7 @@ public:
 	 * 후보 전체와 후보 Dt를 검증한 뒤 교체합니다. 실패 시 설정과 실행 상태를 보존합니다.
 	 * 성공 시에도 입자·승수·통계·충돌 이벤트·시간은 유지하며 다음 실행부터 새 값을 사용합니다.
 	 */
-	void Configure(const FSettings& InSettings);
+	FOperationResult Configure(const FSettings& InSettings);
 
 	const FSettings& GetSettings() const noexcept
 	{
@@ -63,7 +76,7 @@ public:
 	 * 모든 Box 장애물의 0이 아닌 고유 ID, 유한한 중심과 양수 축 길이를 검증한 뒤 목록을 교체합니다.
 	 * @note 검증 실패 시 기존 장애물을 보존하며 범퍼 강도는 범퍼 처리 시 검사합니다.
 	 */
-	void SetObstacles(std::vector<FObstacle> InObstacles);
+	FOperationResult SetObstacles(std::vector<FObstacle> InObstacles);
 
 	const std::vector<std::unique_ptr<FBody>>& GetBodies() const noexcept
 	{
@@ -75,7 +88,7 @@ public:
 		return SoftSolver;
 	}
 
-	const FStats& GetStats() const noexcept
+	const FSoftContactStats& GetStats() const noexcept
 	{
 		return Stats;
 	}
@@ -93,9 +106,9 @@ public:
 
 private:
 	/** Settings와 SubstepSeconds > 0, 유한한 1/(SubstepSeconds*SubstepSeconds)가 Step에서 검증되어야 합니다. */
-	void AdvanceSubstep(double SubstepSeconds);
+	FOperationResult AdvanceSubstep(double SubstepSeconds);
 
-	void SolveIteration(double SubstepSeconds);
+	FOperationResult SolveIteration(double SubstepSeconds);
 
 	// 다음 스텝부터 사용할 검증된 물리 설정입니다. Configure는 입자 상태를 직접 변경하지 않습니다.
 	FSettings Settings;
@@ -116,8 +129,14 @@ private:
 	FBumperSystem Bumpers;
 
 	// 이번 양수 Step의 연체 충돌 진단을 서브스텝·반복에 걸쳐 누적합니다. 몸체별 고유 개수와 구분합니다.
-	FStats Stats;
+	FSoftContactStats Stats;
 
 	// 완료한 서브스텝의 누적 시간입니다. 단위는 초이며 Reset에서 0으로 복원합니다.
 	double SimulationTime = 0;
+
+	// SolveIteration 동안 Bodies가 소유한 연체를 빌립니다. 몸체 추가 후 다음 반복에서 다시 구성합니다.
+	std::vector<FSoftBody*> ConstraintBodies;
+
+	// 마지막에 선언하여 몸체와 빌린 목록보다 먼저 작업자를 종료·join합니다.
+	FParallelExecutor ConstraintExecutor;
 };

@@ -8,6 +8,8 @@ const check = spawnSync(process.execPath, [path.join(root, 'tools/check-runtime.
   stdio: 'inherit',
   windowsHide: true,
 });
+
 if (check.error || check.status !== 0)
   throw check.error || new Error('Runtime provenance check failed. Rebuild the C++ core.');
+
 await import('./build-web.mjs');

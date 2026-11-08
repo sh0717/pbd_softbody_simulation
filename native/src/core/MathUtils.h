@@ -28,6 +28,7 @@ inline void AddParticleVector(std::vector<double>& InOutValues, const std::uint3
 {
 	// 입자 인덱스를 연속 XYZ 배열의 첫 성분 오프셋으로 바꾼 값입니다.
 	const std::size_t VertexOffset = std::size_t(VertexIndex) * 3;
+
 	for (EAxis Axis : AllAxes)
 	{
 		InOutValues[VertexOffset + ToIndex(Axis)] += DeltaVector[Axis];

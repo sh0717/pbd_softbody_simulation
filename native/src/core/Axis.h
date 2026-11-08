@@ -1,4 +1,5 @@
 #pragma once
+#include "core/BuildPolicy.h"
 #include <array>
 
 // 계산 축을 구분하며 AllAxes는 X → Y → Z 순서로 순회합니다.

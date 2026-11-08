@@ -2,71 +2,112 @@
 #include <cmath>
 #include <cstdint>
 #include <set>
-#include <stdexcept>
 #include <utility>
 
-void FPhysicsWorld::Configure(const FSettings& InSettings)
+FOperationResult FPhysicsWorld::Configure(const FSettings& InSettings)
 {
-	InSettings.Validate(InSettings.Dt);
+	const FOperationResult Status = InSettings.Validate(InSettings.Dt);
+
+	if (!Status)
+	{
+		return Status;
+	}
+
 	Settings = InSettings;
+
+	return {};
 }
 
-void FPhysicsWorld::SetObstacles(std::vector<FObstacle> InObstacles)
+FOperationResult FPhysicsWorld::SetObstacles(std::vector<FObstacle> InObstacles)
 {
 	std::set<std::uint32_t> ObstacleIds;
+
 	for (const FObstacle& Obstacle : InObstacles)
 	{
 		if (Obstacle.Id == 0 || !ObstacleIds.insert(Obstacle.Id).second)
 		{
-			throw std::invalid_argument("Obstacle IDs must be unique and nonzero");
+			return {EErrorCode::InvalidArgument, "Obstacle IDs must be unique and nonzero"};
 		}
+
 		for (EAxis Axis : AllAxes)
 		{
 			if (!std::isfinite(Obstacle.Position[Axis]) || !std::isfinite(Obstacle.Size[Axis]) || Obstacle.Size[Axis] <= 0)
 			{
-				throw std::invalid_argument("Invalid obstacle geometry");
+				return {EErrorCode::InvalidArgument, "Invalid obstacle geometry"};
 			}
 		}
 	}
+
 	Obstacles = std::move(InObstacles);
+
+	return {};
 }
 
-FSoftBody* FPhysicsWorld::AddSoft(std::vector<double> Positions, FIndices Edges, FIndices Tetrahedra, FIndices Surface, FVector3D Offset, std::vector<double> InverseMasses, FVector3D Velocity)
+FSoftBody* FPhysicsWorld::AddSoft(std::vector<double> Positions, FIndices Edges, FIndices Tetrahedra, FIndices Surface, FVector3D Offset, std::vector<double> InverseMasses, FVector3D Velocity, FOperationResult* OutResult)
 {
 	std::unique_ptr<FSoftBody> Body = std::make_unique<FSoftBody>(std::move(Positions), std::move(Edges), std::move(Tetrahedra), std::move(Surface), Offset, std::move(InverseMasses), Velocity);
+
+	if (!PublishOperationResult(Body->GetInitializationResult(), OutResult))
+	{
+		return nullptr;
+	}
+
 	FSoftBody* Result = Body.get();
 	Bodies.push_back(std::move(Body));
+
 	return Result;
 }
 
-FBall* FPhysicsWorld::AddBall(double Radius, FVector3D Position, FVector3D Velocity, double InverseMass)
+FBall* FPhysicsWorld::AddBall(double Radius, FVector3D Position, FVector3D Velocity, double InverseMass, FOperationResult* OutResult)
 {
 	std::unique_ptr<FBall> Body = std::make_unique<FBall>(Radius, Position, Velocity, InverseMass);
+
+	if (!PublishOperationResult(Body->GetInitializationResult(), OutResult))
+	{
+		return nullptr;
+	}
+
 	FBall* Result = Body.get();
 	Bodies.push_back(std::move(Body));
+
 	return Result;
 }
 
-bool FPhysicsWorld::Step(double Dt)
+bool FPhysicsWorld::Step(double Dt, FOperationResult* OutResult)
 {
-	Settings.Validate(Dt);
+	if (!PublishOperationResult(Settings.Validate(Dt), OutResult))
+	{
+		return false;
+	}
+
 	if (Dt == 0)
 	{
 		return false;
 	}
+
 	// 실제 요청 시간을 나눈 초 단위 서브스텝 길이입니다. 적분과 XPBD 유연도 보정이 같은 값을 사용합니다.
 	const double SubstepSeconds = Dt / Settings.Substeps;
-	Settings.ValidateSubstep(SubstepSeconds);
+
+	if (!PublishOperationResult(Settings.ValidateSubstep(SubstepSeconds), OutResult))
+	{
+		return false;
+	}
+
 	Stats = {};
 	Bumpers.BeginFrame();
+
 	for (int Substep = 0; Substep < Settings.Substeps; ++Substep)
 	{
-		AdvanceSubstep(SubstepSeconds);
+		if (!PublishOperationResult(AdvanceSubstep(SubstepSeconds), OutResult))
+		{
+			return false;
+		}
 	}
+
 	return true;
 }
 
-void FPhysicsWorld::AdvanceSubstep(double SubstepSeconds)
+FOperationResult FPhysicsWorld::AdvanceSubstep(double SubstepSeconds)
 {
 	Collisions.BeginSubstep();
 
@@ -77,7 +118,12 @@ void FPhysicsWorld::AdvanceSubstep(double SubstepSeconds)
 
 	for (int Iteration = 0; Iteration < Settings.Iterations; ++Iteration)
 	{
-		SolveIteration(SubstepSeconds);
+		const FOperationResult Status = SolveIteration(SubstepSeconds);
+
+		if (!Status)
+		{
+			return Status;
+		}
 	}
 
 	for (std::unique_ptr<FBody>& Body : Bodies)
@@ -88,26 +134,45 @@ void FPhysicsWorld::AdvanceSubstep(double SubstepSeconds)
 	Collisions.Restitute(Settings);
 	Bumpers.Apply(Collisions.GetContacts(), Obstacles, SimulationTime, SubstepSeconds, Settings.Restitution);
 	SimulationTime += SubstepSeconds;
+
+	return {};
 }
 
-void FPhysicsWorld::SolveIteration(double SubstepSeconds)
+FOperationResult FPhysicsWorld::SolveIteration(double SubstepSeconds)
 {
-	for (std::unique_ptr<FBody>& Body : Bodies)
+	ConstraintBodies.clear();
+
+	for (const std::unique_ptr<FBody>& Body : Bodies)
 	{
 		if (Body->IsSoft())
 		{
-			FSoftBody& SoftBody = static_cast<FSoftBody&>(*Body);
-			FConstraintSolver::SolveEdges(SoftBody, SubstepSeconds, Settings);
-			FConstraintSolver::SolveVolumes(SoftBody, SubstepSeconds, Settings);
+			ConstraintBodies.push_back(static_cast<FSoftBody*>(Body.get()));
 		}
 	}
 
-	Collisions.SolveDynamic(Bodies, SoftSolver, Stats);
+	ConstraintExecutor.Run(ConstraintBodies.size(), [this, SubstepSeconds](std::size_t BodyIndex) noexcept
+	{
+		FSoftBody& SoftBody = *ConstraintBodies[BodyIndex];
+
+		// 같은 몸체의 위치를 공유하므로 거리 → 체적 순서를 한 작업 안에서 유지합니다.
+		FConstraintSolver::SolveEdges(SoftBody, SubstepSeconds, Settings);
+		FConstraintSolver::SolveVolumes(SoftBody, SubstepSeconds, Settings);
+	});
+
+	// Run의 완료 대기 뒤에만 몸체 간 위치·접촉 공유 상태에 접근합니다.
+	const FOperationResult Status = Collisions.SolveDynamic(Bodies, SoftSolver, Stats);
+
+	if (!Status)
+	{
+		return Status;
+	}
 
 	for (std::unique_ptr<FBody>& Body : Bodies)
 	{
 		Collisions.SolveStatic(*Body, Obstacles, Settings);
 	}
+
+	return {};
 }
 
 void FPhysicsWorld::Settle()
@@ -121,6 +186,7 @@ void FPhysicsWorld::Reset()
 	{
 		Body->Reset();
 	}
+
 	SimulationTime = 0;
 	Stats = {};
 	Bumpers.Reset();

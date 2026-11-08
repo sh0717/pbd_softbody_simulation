@@ -1,8 +1,8 @@
 #pragma once
 #include "collision/SoftContactSolver.h"
+#include <cassert>
 #include <cstddef>
 #include <optional>
-#include <stdexcept>
 #include <vector>
 
 struct FGeneratedContactRange
@@ -24,7 +24,7 @@ class FContactSession
 public:
 	explicit FContactSession(const FContactOptions& Options)
 	{
-		Core.Configure(Options);
+		InitializationResult = Core.Configure(Options);
 	}
 
 	FContactSession(const FContactSession&) = delete;
@@ -39,21 +39,42 @@ public:
 	 * 준비에 성공한 경우에만 기존 배치를 무효화합니다. Core의 공간 캐시 갱신 실패 보장은
 	 * FSoftContactSolver::Prepare를 따르며 Pending/Generation은 실패 시 유지합니다.
 	 */
-	void Prepare(const std::vector<FSoftBody*>& Bodies)
+	FOperationResult Prepare(const std::vector<FSoftBody*>& Bodies)
 	{
-		Core.Prepare(Bodies);
+		if (!InitializationResult)
+		{
+			return InitializationResult;
+		}
+
+		const FOperationResult Status = Core.Prepare(Bodies);
+
+		if (!Status)
+		{
+			return Status;
+		}
+
 		Pending.clear();
 		++Generation;
+
+		return {};
 	}
 
 	/**
 	 * 양방향 접촉을 세션에 추가하고 이번에 생성한 반열린 범위와 세대를 반환합니다.
 	 * @note 위치를 변경하지 않으며 반환 범위는 준비 성공 시 만료됩니다.
 	 */
-	FGeneratedContactRange Generate(FSoftBody* BodyA, FSoftBody* BodyB)
+	FGeneratedContactRange Generate(FSoftBody* BodyA, FSoftBody* BodyB, FOperationResult* OutResult = nullptr)
 	{
 		const std::size_t Begin = Pending.size();
+
+		if (!Core.IsPrepared(BodyA) || !Core.IsPrepared(BodyB))
+		{
+			PublishOperationResult({EErrorCode::OutOfRange, "Call prepare before generating contacts"}, OutResult);
+			return {Begin, Begin, Generation};
+		}
+
 		Core.Generate(BodyA, BodyB, Pending);
+		PublishOperationResult({}, OutResult);
 		return {Begin, Pending.size(), Generation};
 	}
 
@@ -63,29 +84,33 @@ public:
 	 */
 	const FContact& GetContact(std::size_t Index) const
 	{
-		return Pending.at(Index);
+		assert(Index < Pending.size());
+		return Pending[Index];
 	}
 
 	/**
 	 * 세대와 인덱스를 모두 확인한 뒤 위치를 변경합니다. 과거와 같이 각 접촉을
 	 * 순서대로 투영하므로 여러 접촉 중 후속 오류가 앞선 투영을 롤백하지는 않습니다.
 	 */
-	bool Project(unsigned Index, unsigned ContactGeneration)
+	bool Project(unsigned Index, unsigned ContactGeneration, FOperationResult* OutResult = nullptr)
 	{
 		if (ContactGeneration != Generation || Index >= Pending.size())
 		{
-			throw std::invalid_argument("Expired contact batch");
+			PublishOperationResult({EErrorCode::InvalidArgument, "Expired contact batch"}, OutResult);
+			return false;
 		}
+
+		PublishOperationResult({}, OutResult);
 		return Core.Project(Pending[Index]);
 	}
 
 	/** 준비된 몸체에서 점을 포함하는 사면체 인덱스를 독립 배열로 반환합니다. */
-	FIndices Query(FSoftBody* Body, FVector3D Point)
+	FIndices Query(FSoftBody* Body, FVector3D Point, FOperationResult* OutResult = nullptr)
 	{
-		return Core.Query(Body, Point);
+		return Core.Query(Body, Point, false, OutResult);
 	}
 
-	const FStats& GetStats() const noexcept
+	const FSoftContactStats& GetStats() const noexcept
 	{
 		return Core.GetStats();
 	}
@@ -95,7 +120,15 @@ public:
 		return Core.GetBodyInfo(Body);
 	}
 
+	const FOperationResult& GetInitializationResult() const noexcept
+	{
+		return InitializationResult;
+	}
+
 private:
+	// 생성 시 접촉 설정의 검증 결과입니다. 실패한 세션은 등록하지 않습니다.
+	FOperationResult InitializationResult;
+
 	// 이 호스트 세션만 사용하는 독립적인 연체 접촉 솔버와 공간 캐시입니다.
 	FSoftContactSolver Core;
 

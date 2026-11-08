@@ -18,10 +18,16 @@ class ProjectHTTPServer(ThreadingHTTPServer):
     def server_bind(self) -> None:
         if sys.platform == "win32":
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+
         super().server_bind()
 
 
 class ProjectRequestHandler(SimpleHTTPRequestHandler):
+    def end_headers(self) -> None:
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+        self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
+        super().end_headers()
+
     # Windows registry MIME overrides can classify .mjs as text/plain.
     # ES module consumers require a JavaScript MIME type regardless of that registry.
     extensions_map = {
@@ -35,37 +41,50 @@ class ProjectRequestHandler(SimpleHTTPRequestHandler):
 def serves_current_project(port: int) -> bool:
     for name in ("pbd_model.html", "src/app.js", "wasm/pbd_core.wasm"):
         expected = (ROOT / name).read_bytes()
+
         try:
             with urlopen(f"http://127.0.0.1:{port}/{name}", timeout=2) as response:
                 if response.read(len(expected) + 1) != expected:
                     return False
         except (OSError, URLError):
             return False
+
     return True
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8000)
+
     args = parser.parse_args()
+
     if not 1 <= args.port <= 65535:
         parser.error("port must be between 1 and 65535")
+
     print("PBD_SERVER_STARTING", flush=True)
+
     handler = partial(ProjectRequestHandler, directory=str(ROOT))
+
     try:
         server = ProjectHTTPServer(("127.0.0.1", args.port), handler)
     except OSError as error:
         if serves_current_project(args.port):
             print(f"PBD_SERVER_READY http://127.0.0.1:{args.port}/pbd_model.html (existing server)", flush=True)
+
             return 0
+
         print(f"PBD_SERVER_ERROR: port {args.port} is unavailable: {error}", file=sys.stderr, flush=True)
+
         return 1
+
     with server:
         print(f"PBD_SERVER_READY http://127.0.0.1:{args.port}/pbd_model.html", flush=True)
+
         try:
             server.serve_forever()
         except KeyboardInterrupt:
             pass
+
     return 0
 
 

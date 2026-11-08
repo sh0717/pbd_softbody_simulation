@@ -3,9 +3,12 @@ native/src/simulation/Body.cpp
 native/src/simulation/SoftBody.cpp
 native/src/simulation/Ball.cpp
 native/src/simulation/ConstraintSolver.cpp
+native/src/simulation/ParallelExecutor.cpp
 native/src/simulation/TimeIntegrator.cpp
 native/src/collision/SoftContactSolver.cpp
-native/src/collision/TetrahedronSpatialIndex.cpp
+native/src/collision/TetrahedronPointQuery.cpp
+native/src/collision/TetrahedronGeometry.cpp
+native/src/collision/TetrahedronCellGrid.cpp
 native/src/collision/SurfaceBvh.cpp
 native/src/collision/SurfaceTopology.cpp
 native/src/collision/TriangleGeometry.cpp

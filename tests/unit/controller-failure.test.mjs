@@ -9,10 +9,13 @@ test('a view failure after a world commit stops commands and reports the origina
     balls: [],
     bodies: [],
     obstacles: [],
+
     addBall() {
       const body = {};
+
       this.balls.push(body);
       this.bodies.push(body);
+
       return body;
     },
   };
@@ -28,6 +31,7 @@ test('a view failure after a world commit stops commands and reports the origina
   });
   controller.ui = { updateCounts() {} };
   controller.running = true;
+
   assert.throws(
     () => controller.addBall([0, 0, 0]),
     (error) => error === failure,
@@ -57,12 +61,14 @@ test('invalid world input before a commit does not trigger fatal shutdown', () =
     onFatal: (error) => reported.push(error),
   });
   controller.running = true;
+
   assert.throws(
     () => controller.addBall([NaN, 0, 0]),
     (error) => error === invalid,
   );
   assert.equal(controller.running, true);
   assert.deepEqual(reported, []);
+
   controller.assertAlive();
 });
 
@@ -75,6 +81,7 @@ test('rejected obstacle input does not consume the next identifier', () => {
   };
   const controller = new ExperimentController({ world, view: {} });
   controller.nextObstacleId = 17;
+
   assert.throws(() => controller.addObstacle('box'), /invalid shape/);
   assert.equal(controller.nextObstacleId, 17);
   assert.equal(controller.failed, false);
@@ -89,15 +96,21 @@ test('committed body and obstacle changes stop on a view synchronization failure
     const world = {
       softBodies: [],
       obstacles: [],
+
       addSoftBody() {
         this.softBodies.push(body);
+
         return body;
       },
+
       addObstacle() {
         this.obstacles.push(obstacle);
+
         return obstacle;
       },
+
       updateObstacle() {},
+
       removeObstacle() {},
     };
     const failView = () => {
@@ -118,12 +131,14 @@ test('committed body and obstacle changes stop on a view synchronization failure
     controller.picking = { endDrag() {} };
     controller.selectedObstacle = obstacle;
     controller.running = true;
+
     const run = {
       addSoft: () => controller.addSoft([0, 0, 0]),
       addObstacle: () => controller.addObstacle('box'),
       editObstacle: () => controller.editObstacle('size-x', 2),
       removeObstacle: () => controller.removeObstacle(),
     }[command];
+
     assert.throws(run, (error) => error === failure, command);
     assert.equal(controller.running, false, command);
     assert.deepEqual(reported, [failure], command);

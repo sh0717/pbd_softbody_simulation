@@ -2,9 +2,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <iostream>
-#include <stdexcept>
 #include <string>
 
 namespace
@@ -14,7 +14,8 @@ namespace
 	{
 		if (!bValue)
 		{
-			throw std::runtime_error(Reason);
+			std::cerr << "FAIL: " << Reason << '\n';
+			std::exit(EXIT_FAILURE);
 		}
 	}
 
@@ -60,10 +61,12 @@ int main()
 	{
 		FPhysicsWorld W;
 		Setup(W);
+
 		FSoftBody* B = W.AddSoft(Tetra(), {}, {0, 1, 2, 3}, {}, {}, {0, 0, 0, 1});
 		B->SetParticlePosition(3, {0, 0, -0.3});
 		FConstraintSolver::SolveVolumes(*B, 0.1, W.GetSettings());
 		Near(B->GetPositions()[11], 1);
+
 		for (int I = 0; I < 9; ++I)
 		{
 			Near(B->GetPositions()[I], B->GetRestPositions()[I]);
@@ -80,16 +83,20 @@ int main()
 				{
 					FPhysicsWorld World;
 					Setup(World);
+
 					FSettings Settings = World.GetSettings();
 					Settings.bXpbd = bXpbd;
 					Settings.PbdStiffness = 0.4;
 					Settings.VolumeCompliance = 0.001;
 					World.Configure(Settings);
+
 					const FIndices Tetrahedra = bReverseWinding ? FIndices{0, 2, 1, 3} : FIndices{0, 1, 2, 3};
 					FSoftBody* Body = World.AddSoft(Tetra(), {}, Tetrahedra, {}, {}, {0, 0, 0, 1});
 					Body->SetParticlePosition(3, {0, 0, 2});
+
 					const std::vector<double> FixedPositions(Body->GetPositions().begin(), Body->GetPositions().begin() + 9);
 					FConstraintSolver::SolveVolumes(*Body, StepSeconds, Settings);
+
 					// 고정된 밑면에서 C = 부호*(z-1), 움직이는 기울기는 부호 하나이므로 해석해를 직접 구합니다.
 					const double Sign = bReverseWinding ? -1 : 1;
 					const double ComplianceRatio = bXpbd ? 36 * (0.001 / (StepSeconds * StepSeconds)) : 0;
@@ -98,15 +105,18 @@ int main()
 					Near(Body->GetVolumeLambdas()[0], -Sign * CorrectionScale);
 					Near(Body->GetRestVolumes()[0], Sign / 6);
 					Require(std::equal(FixedPositions.begin(), FixedPositions.end(), Body->GetPositions().begin()), "six-volume projection moved pinned particles");
+
 					if (bXpbd)
 					{
 						for (int Iteration = 0; Iteration < 8; ++Iteration)
 						{
 							FConstraintSolver::SolveVolumes(*Body, StepSeconds, Settings);
 						}
+
 						Near(Body->GetPositions()[11], 2 - CorrectionScale);
 						Near(Body->GetVolumeLambdas()[0], -Sign * CorrectionScale);
 					}
+
 					Body->BeginSubstep();
 					Near(Body->GetVolumeLambdas()[0], 0);
 				}
@@ -118,15 +128,19 @@ int main()
 	{
 		FPhysicsWorld World;
 		Setup(World);
+
 		FSoftBody* Body = World.AddSoft(Tetra(), {}, {0, 1, 2, 3}, {}, {}, {1, 2, 3, 4});
 		Body->SetParticlePosition(3, {0, 0, 2});
 		FConstraintSolver::SolveVolumes(*Body, 0.1, World.GetSettings());
+
 		// C=1, 네 기울기 제곱의 역질량 가중합은 33이며 각 축 보정은 해석적으로 정해집니다.
 		const std::vector<double> Expected{2.0 / 33, 2.0 / 33, 1.0 / 33, 1 - 4.0 / 33, 0, 0, 0, 1 - 6.0 / 33, 0, 0, 0, 2 - 4.0 / 33};
+
 		for (std::size_t ComponentIndex = 0; ComponentIndex < Expected.size(); ++ComponentIndex)
 		{
 			Near(Body->GetPositions()[ComponentIndex], Expected[ComponentIndex]);
 		}
+
 		Near(Body->GetVolumeLambdas()[0], -1.0 / 33);
 	}},
 		{"six-volume degeneracy threshold preserves the physical cutoff",
@@ -136,9 +150,11 @@ int main()
 		{
 			FSoftBody Body({0, 0, 0, Scale, 0, 0, 0, Scale, 0, 0, 0, Scale}, {}, {0, 1, 2, 3}, {}, {}, {0, 0, 0, 1});
 			Body.SetParticlePosition(3, {0, 0, 2 * Scale});
+
 			FSettings Settings;
 			Settings.bXpbd = false;
 			FConstraintSolver::SolveVolumes(Body, 0.1, Settings);
+
 			// 길이 자체가 아닌 비율을 비교하여 극소 좌표에서도 퇴화 판정 경계를 검출합니다.
 			Near(Body.GetPositions()[11] / Scale, Scale == 2E-75 ? 2 : 1);
 		}
@@ -148,19 +164,24 @@ int main()
 	{
 		FSoftBody Body(Tetra(), {}, {0, 1, 2, 3}, {});
 		const double Scale = 1E-4;
+
 		for (std::uint32_t VertexIndex = 0; VertexIndex < 4; ++VertexIndex)
 		{
 			Body.SetParticlePosition(VertexIndex, ReadParticleVector(Body.GetRestPositions(), VertexIndex) * Scale);
 		}
+
 		const std::vector<double> Before = Body.GetPositions();
 		FSettings Settings;
 		Settings.bXpbd = false;
 		FConstraintSolver::SolveVolumes(Body, 0.1, Settings);
+
 		double MaximumDisplacement = 0;
+
 		for (std::uint32_t VertexIndex = 0; VertexIndex < 4; ++VertexIndex)
 		{
 			MaximumDisplacement = std::max(MaximumDisplacement, (ReadParticleVector(Body.GetPositions(), VertexIndex) - ReadParticleVector(Before, VertexIndex)).Length());
 		}
+
 		// 기준 지름 sqrt(2)가 보정 상한이며, 원점 입자의 기울기 길이는 sqrt(3)*Scale²입니다.
 		Near(MaximumDisplacement, std::sqrt(2.0));
 		Near(Body.GetVolumeLambdas()[0] * Scale * Scale, std::sqrt(2.0 / 3));
@@ -170,9 +191,11 @@ int main()
 	{
 		FPhysicsWorld W;
 		Setup(W);
+
 		FSettings Settings = W.GetSettings();
 		Settings.EdgeCompliance = 0.02;
 		W.Configure(Settings);
+
 		FSoftBody* B = W.AddSoft({0, 0, 0, 1, 0, 0}, {0, 1}, {}, {}, {}, {0, 2});
 		B->SetParticlePosition(1, {2, 0, 0});
 		FConstraintSolver::SolveEdges(*B, 0.1, W.GetSettings());
@@ -187,42 +210,19 @@ int main()
 		{
 			FPhysicsWorld W;
 			Setup(W);
+
 			FSettings S = W.GetSettings();
 			S.EdgeCompliance = bEdge ? 1E308 : 0;
 			S.VolumeCompliance = bEdge ? 0 : 1E308;
 			W.Configure(S);
+
 			FSoftBody* B = W.AddSoft(Tetra(), {0, 1}, {0, 1, 2, 3}, {});
 			const std::vector<double> Before = B->GetPositions();
-			bool bRejected = false;
-			try
-			{
-				W.Step(0.1);
-			}
-			catch (const std::range_error&)
-			{
-				bRejected = true;
-			}
-			Require(bRejected, "overflow must be rejected before prediction");
+			FOperationResult Status;
+			Require(!W.Step(0.1, &Status) && Status.Code == EErrorCode::OutOfRange, "overflow must be rejected before prediction");
 			Require(B->GetPositions() == Before, "failed step changed positions");
 			Near(W.GetSimulationTime(), 0);
-			bRejected = false;
-			try
-			{
-				if (bEdge)
-				{
-					FConstraintSolver::SolveEdges(*B, 0.1, S);
-				}
-				else
-				{
-					FConstraintSolver::SolveVolumes(*B, 0.1, S);
-				}
-			}
-			catch (const std::range_error&)
-			{
-				bRejected = true;
-			}
-			Require(bRejected, "direct projection must reject overflow");
-			Require(B->GetPositions() == Before, "failed projection changed positions");
+			Require(S.ValidateSubstep(0.1).Code == EErrorCode::OutOfRange, "projection boundary must reject overflow");
 		}
 	}},
 		{"shared substeps integrate gravity",
@@ -230,10 +230,12 @@ int main()
 	{
 		FPhysicsWorld W;
 		Setup(W);
+
 		FSettings Settings = W.GetSettings();
 		Settings.Gravity = {0, -12, 0};
 		Settings.Substeps = 3;
 		W.Configure(Settings);
+
 		FBall* A = W.AddBall(0.2, {-4, 0, 0});
 		FSoftBody* B = W.AddSoft({4, 0, 0}, {}, {}, {});
 		W.Step(0.1);
@@ -246,6 +248,7 @@ int main()
 	{
 		FPhysicsWorld W;
 		Setup(W);
+
 		FBall* A = W.AddBall(1, {-0.5, 0, 0});
 		FBall* B = W.AddBall(1, {0.5, 0, 0}, {}, 3);
 		W.Step(0.1);
@@ -259,9 +262,11 @@ int main()
 	{
 		FPhysicsWorld W;
 		Setup(W);
+
 		FSettings Settings = W.GetSettings();
 		Settings.Restitution = 0.5;
 		W.Configure(Settings);
+
 		FBall* A = W.AddBall(1, {-1.1, 0, 0}, {2, 0, 0});
 		FBall* B = W.AddBall(1, {1.1, 0, 0}, {-2, 0, 0}, 3);
 		W.Step(0.1);
@@ -273,10 +278,12 @@ int main()
 	{
 		FPhysicsWorld W;
 		Setup(W);
+
 		FSoftBody* A = W.AddSoft({0.1, 0.2, 0.3}, {}, {}, {});
 		FSoftBody* B = W.AddSoft(Tetra(), {}, {0, 1, 2, 3}, {});
 		FSoftContactSolver Solver;
 		Solver.Prepare({A, B});
+
 		std::vector<FContact> Contacts;
 		Solver.Generate(A, B, Contacts);
 		Require(Contacts.size() == 1, "expected local contact");
@@ -291,6 +298,7 @@ int main()
 	{
 		FPhysicsWorld W;
 		Setup(W);
+
 		FSoftBody* B = W.AddSoft(Tetra(), {}, {0, 1, 2, 3}, {}, {1000000, 0, 0});
 		FSoftContactSolver Solver;
 		FContactOptions Options;
@@ -306,6 +314,7 @@ int main()
 	{
 		FPhysicsWorld W;
 		Setup(W);
+
 		FBall* B = W.AddBall(1, {2, 0, 0});
 		FObstacle O;
 		O.Id = 1;
@@ -326,6 +335,7 @@ int main()
 	{
 		FPhysicsWorld W;
 		Setup(W);
+
 		FBall* B = W.AddBall(1, {0, 0, 0}, {1, 2, 3});
 		const std::vector<double> P(B->GetPositions().begin(), B->GetPositions().end());
 		const std::vector<double> V(B->GetVelocities().begin(), B->GetVelocities().end());
@@ -337,6 +347,7 @@ int main()
 	{
 		FPhysicsWorld W;
 		Setup(W);
+
 		FBall* A = W.AddBall(1, {0, 0, 0}, {1, 2, 3});
 		FBall* B = W.AddBall(1, {10, 0, 0}, {3, 2, 1});
 		FObstacle O;
@@ -353,10 +364,12 @@ int main()
 	{
 		FPhysicsWorld W;
 		Setup(W);
+
 		FSoftBody* SoftBody = W.AddSoft(Tetra(), {0, 1}, {0, 1, 2, 3}, {}, {2, 3, 4});
 		FBall* Ball = W.AddBall(1, {-4, 0, 0});
 		Require(dynamic_cast<FSoftBody*>(W.GetBodies()[0].get()) == SoftBody, "wrong soft body type");
 		Require(dynamic_cast<FBall*>(W.GetBodies()[1].get()) == Ball, "wrong ball type");
+
 		const std::vector<double> Rest(SoftBody->GetPositions().begin(), SoftBody->GetPositions().end());
 		SoftBody->MoveTo({5, 5, 5});
 		SoftBody->SetDragTarget(FVector3D{1, 2, 3});
@@ -368,44 +381,24 @@ int main()
 	{
 		FPhysicsWorld W;
 		Setup(W);
+
 		FSettings InvalidSettings = W.GetSettings();
 		InvalidSettings.Substeps = 0;
-		bool bRejected = false;
-		try
-		{
-			W.Configure(InvalidSettings);
-		}
-		catch (const std::range_error&)
-		{
-			bRejected = true;
-		}
-		Require(bRejected, "invalid substeps accepted");
-		bRejected = false;
-		try
-		{
-			FSoftBody B(Tetra(), {0, 99}, {}, {});
-		}
-		catch (const std::invalid_argument&)
-		{
-			bRejected = true;
-		}
-		Require(bRejected, "invalid mesh accepted");
+		Require(W.Configure(InvalidSettings).Code == EErrorCode::OutOfRange, "invalid substeps accepted");
+
+		FSoftBody B(Tetra(), {0, 99}, {}, {});
+		Require(B.GetInitializationResult().Code == EErrorCode::InvalidArgument, "invalid mesh accepted");
 	}},
 	};
+
 	for (const std::pair<std::string, std::function<void()>>& Test : Tests)
 	{
-		try
-		{
-			Test.second();
-			++Passed;
-			std::cout << "PASS " << Test.first << '\n';
-		}
-		catch (const std::exception& E)
-		{
-			std::cerr << "FAIL " << Test.first << ": " << E.what() << '\n';
-			return 1;
-		}
+		Test.second();
+		++Passed;
+		std::cout << "PASS " << Test.first << '\n';
 	}
+
 	std::cout << Passed << " native checks passed\n";
+
 	return 0;
 }

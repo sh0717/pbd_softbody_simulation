@@ -7,6 +7,7 @@
     SoftContactSolver: api.SoftContactSolver,
     closestPointTriangle: api.closestPointTriangle,
   };
+
   if (typeof module === 'object' && module.exports) module.exports = contacts;
   else root.PBDSoftContacts = contacts;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

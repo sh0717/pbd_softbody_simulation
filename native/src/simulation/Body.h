@@ -1,5 +1,6 @@
 #pragma once
 #include "core/MathUtils.h"
+#include "core/OperationResult.h"
 #include <cstddef>
 #include <optional>
 #include <vector>
@@ -19,6 +20,12 @@ class FBumperSystem;
 class FBody
 {
 public:
+	/** 생성 입력의 검증 결과입니다. 실패한 객체는 상태 조회와 파괴만 허용합니다. */
+	const FOperationResult& GetInitializationResult() const noexcept
+	{
+		return InitializationResult;
+	}
+
 	enum class EBodyType
 	{
 		Soft,
@@ -74,22 +81,22 @@ public:
 	 * 유한한 드래그 목표를 저장하며 빈 값이면 드래그를 해제합니다.
 	 * @note 검증 실패 시 기존 목표와 입자 상태를 보존합니다.
 	 */
-	void SetDragTarget(std::optional<FVector3D> Target);
+	FOperationResult SetDragTarget(std::optional<FVector3D> Target);
 
 	/** 인덱스와 값을 모두 검증한 뒤 대상 입자만 변경하며 경계는 별도로 갱신합니다. */
-	void SetParticlePosition(std::size_t ParticleIndex, FVector3D Position);
+	FOperationResult SetParticlePosition(std::size_t ParticleIndex, FVector3D Position);
 
 	/**
 	 * 속도는 장면 길이/초 단위이며 역질량은 음수가 아닌 유한 값입니다.
 	 * 위치·속도·역질량 설정에 실패하면 대상 입자를 포함한 기존 저장소를 보존합니다.
 	 */
-	void SetParticleVelocity(std::size_t ParticleIndex, FVector3D Velocity);
+	FOperationResult SetParticleVelocity(std::size_t ParticleIndex, FVector3D Velocity);
 
 	/**
 	 * 인덱스와 음수가 아닌 유한 역질량을 검증한 뒤 해당 입자만 변경합니다.
 	 * @note 0은 고정 입자입니다. 실패 시 기존 저장소를 보존합니다.
 	 */
-	void SetParticleInverseMass(std::size_t ParticleIndex, double InInverseMass);
+	FOperationResult SetParticleInverseMass(std::size_t ParticleIndex, double InInverseMass);
 
 	const std::vector<double>& GetPositions() const noexcept
 	{
@@ -132,9 +139,12 @@ public:
 	virtual void Reset();
 
 	/** 현재 위치와 경계만 이동합니다. 유한하지 않은 목표 위치는 수정 전에 거부합니다. */
-	void MoveTo(FVector3D Target);
+	FOperationResult MoveTo(FVector3D Target);
 
 protected:
+	// 생성자에서 검증 실패를 저장합니다. 월드는 실패한 몸체를 등록하지 않습니다.
+	FOperationResult InitializationResult;
+
 	FBody(EBodyType InType, std::vector<double> Vertices, FVector3D PositionOffset, std::vector<double> InverseMasses, FVector3D Velocity);
 
 	/** 파생 클래스가 계산한 경계 결과만 발행하며 입자 저장소는 변경하지 않습니다. */
@@ -145,7 +155,7 @@ protected:
 
 private:
 	/** 인덱스와 벡터 전체를 검증한 뒤 대상 입자의 XYZ만 변경합니다. 검증 실패 시 저장소를 보존합니다. */
-	void SetParticleVector(std::vector<double>& InOutValues, std::size_t ParticleIndex, const FVector3D& Value);
+	FOperationResult SetParticleVector(std::vector<double>& InOutValues, std::size_t ParticleIndex, const FVector3D& Value);
 
 	friend class FTimeIntegrator;
 

@@ -31,7 +31,9 @@ const required = [
   'docs/architecture.md',
   'docs/project-conventions.md',
 ];
+
 for (const file of required) assert.ok(existsSync(path.join(root, file)), `Missing: ${file}`);
+
 for (const old of [
   'cpp',
   'scripts',
@@ -43,11 +45,14 @@ for (const old of [
 ]) {
   assert.ok(!existsSync(path.join(root, old)), `Obsolete active path: ${old}`);
 }
+
 const manifest = (await readFile(path.join(root, 'native/sources.txt'), 'utf8'))
   .split(/\r?\n/)
   .map((line) => line.trim())
   .filter(Boolean);
+
 assert.equal(new Set(manifest).size, manifest.length, 'Duplicate source manifest entries');
+
 for (const file of manifest) {
   assert.ok(
     file.startsWith('native/src/') || file.startsWith('native/bindings/'),
@@ -55,7 +60,9 @@ for (const file of manifest) {
   );
   assert.ok(existsSync(path.join(root, file)), `Missing core source: ${file}`);
 }
+
 const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+
 for (const name of [
   'start',
   'build',
@@ -73,13 +80,18 @@ for (const name of [
 
 async function walk(directory) {
   if (!existsSync(directory)) return [];
+
   const files = [];
+
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     if (['generated', 'fixtures', 'data', '__pycache__'].includes(entry.name)) continue;
+
     const file = path.join(directory, entry.name);
+
     if (entry.isDirectory()) files.push(...(await walk(file)));
     else if (/\.(?:[cm]?js|cpp|h)$/.test(entry.name)) files.push(file);
   }
+
   return files;
 }
 const files = (
@@ -92,34 +104,45 @@ const files = (
 const implementations = files
   .map((file) => path.relative(root, file).replaceAll('\\', '/'))
   .filter((file) => /^(?:native\/src|native\/bindings)\/.*\.cpp$/.test(file));
+
 for (const file of implementations)
   assert.ok(manifest.includes(file), `Core source omitted from manifest: ${file}`);
+
 for (const file of manifest) {
   assert.ok(
     implementations.includes(file),
     `Manifest source is outside the domain implementation set: ${file}`,
   );
 }
+
 for (const name of ['index.html', 'pbd_model.html']) {
   const entry = path.join(root, name);
+
   if (!existsSync(entry)) continue;
+
   const html = await readFile(entry, 'utf8');
+
   for (const [, reference] of html.matchAll(/(?:src|href)\s*=\s*['"]([^'"]+)['"]/g)) {
     if (/^(?:[a-z]+:|\/\/|#)/i.test(reference)) continue;
+
     const local = reference.split(/[?#]/)[0];
+
     if (local)
       assert.ok(existsSync(path.resolve(root, local)), `${name}: missing asset ${reference}`);
   }
 }
+
 for (const file of files) {
   const source = await readFile(file, 'utf8');
   const relative = path.relative(root, file).replaceAll('\\', '/');
+
   if (/\.[cm]?js$/.test(file)) {
     const imports = [
       ...source.matchAll(
         /(?:\bfrom\s*|\bimport\s*(?:\(\s*)?|\brequire\s*\(\s*)['"](\.[^'"]+)['"]/g,
       ),
     ];
+
     // A URL may name a future output (artifacts/, build/, etc.). Only module
     // loading expressions are dependencies that must already exist in a clone.
     for (const [, specifier] of imports) {
@@ -127,16 +150,20 @@ for (const file of files) {
         existsSync(path.resolve(path.dirname(file), specifier)),
         `${relative}: missing import ${specifier}`,
       );
+
       if (relative.startsWith('src/'))
         assert.ok(!specifier.includes('fixtures'), `${relative}: runtime fixture dependency`);
+
       if (relative.startsWith('src/simulation/'))
         assert.ok(
           !/\/(?:rendering|ui)\//.test(specifier),
           `${relative}: simulation depends on presentation`,
         );
+
       if (relative.startsWith('src/rendering/'))
         assert.ok(!/\/ui\//.test(specifier), `${relative}: rendering depends on UI`);
     }
+
     if (relative.startsWith('src/simulation/')) {
       assert.ok(
         !/\b(?:document|window)\s*[.[]/.test(source),
@@ -144,11 +171,13 @@ for (const file of files) {
       );
     }
   }
+
   if (relative.startsWith('native/src/') && /\.(?:cpp|h)$/.test(file)) {
     assert.ok(
       !/^[ \t]*#include\s*[<"]emscripten\//m.test(source),
       `${relative}: Emscripten belongs in bindings`,
     );
+
     for (const [, include] of source.matchAll(/^[ \t]*#include\s*"([^"]+)"/gm)) {
       const resolved = [
         path.dirname(file),
@@ -158,6 +187,7 @@ for (const file of files) {
       ]
         .map((dir) => path.resolve(dir, include))
         .find((candidate) => existsSync(candidate));
+
       if (resolved)
         assert.ok(
           !path.relative(root, resolved).replaceAll('\\', '/').startsWith('native/bindings/') ||
@@ -170,6 +200,7 @@ for (const file of files) {
     }
   }
 }
+
 console.log(
   `Structure and dependency boundaries passed (${manifest.length} native units, ${files.length} source files).`,
 );

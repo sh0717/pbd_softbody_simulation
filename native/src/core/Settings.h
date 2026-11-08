@@ -1,4 +1,5 @@
 #pragma once
+#include "core/OperationResult.h"
 #include "core/Vector3D.h"
 
 struct FSettings
@@ -37,11 +38,11 @@ struct FSettings
 	FVector3D Gravity{};
 
 	/**
-	 * 설정 범위와 초 단위 스텝 간격을 검증하며 잘못된 값은 예외로 거부합니다.
+	 * 설정 범위와 초 단위 스텝 간격을 검증하며 잘못된 값은 실패 상태로 반환합니다.
 	 * @note StepSeconds는 0을 허용합니다. 양수 서브스텝의 파생 계수는 ValidateSubstep에서 검증합니다.
 	 */
-	void Validate(double StepSeconds) const;
+	FOperationResult Validate(double StepSeconds) const;
 
 	/** 위치 예측이나 제약 직접 투영 전에 시간 간격으로 계산한 계수를 검증합니다. */
-	void ValidateSubstep(double SubstepSeconds) const;
+	FOperationResult ValidateSubstep(double SubstepSeconds) const;
 };

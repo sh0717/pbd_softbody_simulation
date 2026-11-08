@@ -14,6 +14,8 @@ module.exports = {
     'simulation/physics.js',
     'wasm/pbd_core.js',
     'wasm/pbd_core.wasm',
+    'wasm/pbd_core_threaded.js',
+    'wasm/pbd_core_threaded.wasm',
     'vendor/three.min.js',
     'vendor/OrbitControls.js',
     'THREE-LICENSE.txt',

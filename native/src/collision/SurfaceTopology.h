@@ -1,5 +1,6 @@
 #pragma once
 #include "core/MathUtils.h"
+#include "core/OperationResult.h"
 
 // 외부 면과 중복을 제거한 정점을 최초 출현 순서대로 소유합니다.
 // 정점 나열 방향은 사면체 입력 순서를 따르며 결과 면을 정렬하지 않습니다.
@@ -17,4 +18,4 @@ struct FSurfaceTopology
  * 인덱스 범위는 FSoftBody가 검증하며 이 함수는 위치 배열에 접근하지 않습니다.
  * 전달된 표면이 비어 있으면 경계를 자동으로 추출합니다.
  */
-FSurfaceTopology BuildSurfaceTopology(const FIndices& Tetrahedra, const FIndices& SuppliedSurface);
+FSurfaceTopology BuildSurfaceTopology(const FIndices& Tetrahedra, const FIndices& SuppliedSurface, FOperationResult* OutResult = nullptr);

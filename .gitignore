@@ -66,8 +66,11 @@ Desktop.ini
 !/docs/cpp-coding-standard.md
 !/docs/desktop.md
 !/docs/native-layout.md
+!/docs/no-exceptions.md
+!/docs/parallel-constraints.md
 !/docs/project-conventions.md
 !/docs/project-layout.md
+!/docs/tetrahedron-point-query.md
 !/docs/xpbd-lambda.md
 
 # Local editor setup, historical comparisons and retired review automation

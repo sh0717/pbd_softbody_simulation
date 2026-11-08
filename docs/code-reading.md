@@ -74,7 +74,7 @@ deltaPosition = gradient * inverseMass * deltaLambda
 ## 국소 접촉을 읽는 경로
 
 [SoftContactSolver.cpp](../native/src/collision/SoftContactSolver.cpp)는 접촉 생성을 조율하고,
-[사면체 공간 인덱스](../native/src/collision/TetrahedronSpatialIndex.h)와
+[사면체 점 질의](../native/src/collision/TetrahedronPointQuery.h)와
 [표면 BVH](../native/src/collision/SurfaceBvh.h)가 각 탐색 자료구조를 소유합니다.
 독립 위상·기하 모듈과 함께
 다음 순서를 확인합니다.
@@ -82,13 +82,13 @@ deltaPosition = gradient * inverseMass * deltaLambda
 | 단계 | 함수 | 유지할 계약 |
 | --- | --- | --- |
 | 토폴로지 | [SurfaceTopology.cpp](../native/src/collision/SurfaceTopology.cpp)의 `BuildSurfaceTopology` | 테트라의 한 번만 공유되는 면이 실제 외곽. supplied surface와 일치 검증 후 독립 배열 반환 |
-| 현재 위치 인덱스 | `Prepare`, `PrepareBody`, `RefitBodySpatialCache` | 위치 변경 뒤 재준비. dense/sparse/overflow 경로 모두 후보 누락 방지 |
-| 포함 검사 | `FTetrahedronSpatialIndex::QueryContainingTetrahedra`, 내부 `ContainsPoint` | AABB 후보 뒤 barycentric 포함 검사. `bFirst`는 최소 번호가 아닌 첫 순회 일치 |
+| 현재 위치 인덱스 | `Prepare`, `RefitBodySpatialCache` | 위치 변경 뒤 재준비. dense/sparse/overflow 경로 모두 후보 누락 방지 |
+| 포함 검사 | `FTetrahedronPointQuery::QueryContainingTetrahedra`, `FTetrahedronGeometry::ContainsPoint` | AABB 후보 뒤 barycentric 포함 검사. `bFirst`는 최소 번호가 아닌 첫 순회 일치 |
 | 외곽 최근접점 | `FSurfaceBvh::FindNearestPoint`, [TriangleGeometry.cpp](../native/src/collision/TriangleGeometry.cpp)의 `FindClosestPointOnTriangle` | AABB 거리 하한으로 가지치기. 동일 거리에서 기존 방문·엄격 비교 순서 유지 |
 | 수집 | `CollectDirectionalContacts`, `Generate` | A→B·B→A를 모두 수집하고 위치를 바꾸지 않음 |
 | 투영 | `Project` | 한 점과 상대 표면 삼각형의 세 정점에 inverse-mass·barycentric 가중 보정 |
 
-`PrepareBody()`는 처음 보는 topology를 로컬 candidate로 구축하고 셀 인덱스·BVH 갱신까지
+`Prepare()`는 처음 보는 topology를 로컬 candidate로 구축하고 셀 인덱스·BVH 갱신까지
 마친 뒤 캐시에 등록합니다. 기존 topology는 같은 `RefitBodySpatialCache()`로 위치만 갱신합니다.
 `Prepare()`는 Null 입력을 먼저 검사하고 요청 body 전체 준비 뒤 batch 통계를 발행합니다.
 같은 entry의 할당 실패에서 전체 rollback은 보장하지 않습니다.
@@ -96,6 +96,53 @@ deltaPosition = gradient * inverseMass * deltaLambda
 셀 인덱스는 안전한 범위에서 조밀 그리드를, 그 밖에서는 희소 `std::map`을 사용합니다.
 실제 해시 테이블로 바꾸는 알고리즘 변경은 이번 클래스 분리에 포함하지 않습니다.
 BVH는 표면 인덱스·노드·순회 스택을 소유하고 위치 배열은 질의·갱신 호출에서 빌립니다.
+
+### 표면 BVH의 저장 관계와 세 단계
+
+[SurfaceBvh.h](../native/src/collision/SurfaceBvh.h)의 `FSurfaceBvh`는 삼각형을 경계 상자
+계층(Bounding Volume Hierarchy)으로 묶습니다. `FNode`의 AABB는 하위 삼각형을 모두 감싸므로
+점에서 상자까지의 거리가 현재 최선보다 크면 그 가지 전체를 생략할 수 있습니다.
+
+| 저장소 | 의미 | 변경 시점 |
+| --- | --- | --- |
+| `Topology` | 원본 면의 정점 번호와 최초 등장 순서의 고유 표면 정점 | 생성 시 소유하며 이후 고정 |
+| `TriangleOrder` | BVH 순서 번호에서 원본 삼각형 번호로 가는 순열 | 생성 시 중심 좌표로 안정 정렬 |
+| `Nodes` | 배열 인덱스로 연결한 이진 트리, 경계와 담당 순서 구간 | 연결은 고정, 경계만 `Refit`에서 갱신 |
+| `PendingNodeIndices` | 검색 중 아직 방문하지 않은 노드의 LIFO 스택 | 질의마다 비우고 용량 재사용 |
+
+삼각형 9개일 때의 저장 관계 예시입니다. 번호 0은 루트이며 잎은 최대 8개 삼각형을 담당합니다.
+
+```text
+Nodes[0]: [0, 9), 두 자식의 경계를 합친 AABB
+  ├─ Nodes[1]: [0, 4), 잎
+  └─ Nodes[2]: [4, 9), 잎
+
+잎의 순서 번호 k
+  → TriangleOrder[k] = 원본 삼각형 t
+  → Topology.Indices[3*t], [3*t+1], [3*t+2] = 입자 번호
+  → Positions에서 해당 입자의 XYZ를 읽음
+```
+
+[SurfaceBvh.cpp](../native/src/collision/SurfaceBvh.cpp)는 세 흐름으로 읽습니다.
+
+1. `BuildTree` → `BuildNode` → `SelectSplitAxis`: 기준 위치의 중심 분포가 가장 넓은 축을
+   선택하고 안정 정렬한 구간을 개수 기준으로 이등분합니다. 같은 중심의 순서는 유지합니다.
+   중심 배열은 구축에만 쓰는 지역 변수이며 현재 위치 경계는 아직 만들지 않습니다.
+2. `Refit` → `RefitNode` → `RefitLeafBounds`: 잎에서 현재 삼각형의 정점 경계를 계산하고
+   부모는 두 자식의 경계를 합칩니다. 변형으로 공간 순서가 바뀌어도 트리를 다시 정렬하지 않습니다.
+3. `FindNearestPoint` → `QueueChildrenNearFirst` / `SearchLeafTriangles`: AABB 거리 하한을
+   검사한 뒤 내부 노드의 자식을 예약하거나 잎의 삼각형 최근접점을 직접 계산합니다.
+   현재 최선은 질의 지역 변수 `FNearestPointSearchState`에 모읍니다.
+
+가까운 자식이 먼저 나오도록 먼 자식을 스택에 먼저 넣습니다. 자식 경계까지 거리가 같으면
+오른쪽을 먼저 방문합니다. 가지치기는 `>`이고 최선 갱신은 `<`이므로 같은 거리의 후보는
+방문하되 먼저 찾은 결과를 유지합니다. 이 순서는 접촉 삼각형과 검사 횟수에 영향을 줍니다.
+
+첫 질의 전과 위치 변경 뒤에는 반드시 `Refit`을 호출하고, 검색에는 같은 위치 값을 전달합니다.
+`GetTopology()`와 최근접 결과는 독립 복사본이며, 위치 배열은 호출 중에만 빌립니다.
+동일 객체의 갱신·질의는 직렬화해야 합니다. 토폴로지가 바뀌면 새 BVH를 구성합니다.
+
+### 삼각형 최근접점 계산
 
 `FindClosestPointOnTriangle()`은 퇴화 여부 판단·가중치 선택·결과 재구성을 연결합니다.
 `TriangleRegionWeights()`는 A/B/C 정점·AB/AC/BC 엣지·면의 7개 Voronoi 영역을 평탄한 분기로 판정합니다.

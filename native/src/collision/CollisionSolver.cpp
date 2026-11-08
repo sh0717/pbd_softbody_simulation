@@ -26,6 +26,7 @@ namespace
 				return true;
 			}
 		}
+
 		return false;
 	}
 
@@ -36,10 +37,12 @@ namespace
 		{
 			return EAxis::X;
 		}
+
 		if (DistanceToFace.Y <= DistanceToFace.Z)
 		{
 			return EAxis::Y;
 		}
+
 		return EAxis::Z;
 	}
 } // namespace
@@ -47,10 +50,12 @@ namespace
 void FCollisionSolver::RecordContact(FBody& BodyA, std::uint32_t VertexIndexA, FBody* BodyB, std::uint32_t VertexIndexB, FVector3D ContactNormal, std::uint32_t ObstacleId)
 {
 	FVector3D OtherVelocity{};
+
 	if (BodyB)
 	{
 		OtherVelocity = ReadParticleVector(BodyB->GetPreSolveVelocities(), VertexIndexB);
 	}
+
 	const FVector3D RelativeVelocity = ReadParticleVector(BodyA.GetPreSolveVelocities(), VertexIndexA) - OtherVelocity;
 	FContact Contact;
 	Contact.BodyA = &BodyA;
@@ -67,8 +72,10 @@ void FCollisionSolver::SolveParticlePairContact(FBody& InOutBodyA, std::uint32_t
 {
 	const double InverseMassA = InOutBodyA.GetInverseMass()[VertexIndexA];
 	const double InverseMassB = InOutBodyB.GetInverseMass()[VertexIndexB];
+
 	// 두 입자가 움직일 비율의 합입니다. 고정 여부 검사와 위치 보정 분모에 같은 값을 사용합니다.
 	const double InverseMassSum = InverseMassA + InverseMassB;
+
 	if (InverseMassSum == 0)
 	{
 		return;
@@ -76,6 +83,7 @@ void FCollisionSolver::SolveParticlePairContact(FBody& InOutBodyA, std::uint32_t
 
 	FVector3D ContactNormal = ReadParticleVector(InOutBodyA.GetPositions(), VertexIndexA) - ReadParticleVector(InOutBodyB.GetPositions(), VertexIndexB);
 	const double DistanceSquared = ContactNormal.Dot(ContactNormal);
+
 	if (DistanceSquared > ContactRadius * ContactRadius)
 	{
 		//안부딪혔네
@@ -84,6 +92,7 @@ void FCollisionSolver::SolveParticlePairContact(FBody& InOutBodyA, std::uint32_t
 
 	// 현재 두 입자의 중심 거리입니다. 접촉 법선 정규화와 반지름 합의 침투량 계산에 사용합니다.
 	const double CenterDistance = std::sqrt(DistanceSquared);
+
 	if (CenterDistance > MinimumContactNormalLength)
 	{
 		ContactNormal = ContactNormal * (1 / CenterDistance);
@@ -95,12 +104,13 @@ void FCollisionSolver::SolveParticlePairContact(FBody& InOutBodyA, std::uint32_t
 
 	// 겹친 거리를 역질량 합으로 나눈 공통 보정량입니다. 각 입자 이동량에는 자기 역질량을 다시 곱합니다.
 	const double PenetrationCorrection = std::max(0.0, ContactRadius - CenterDistance) / InverseMassSum;
+
 	AddParticleVector(InOutBodyA.Positions, VertexIndexA, ContactNormal * (InverseMassA * PenetrationCorrection));
 	AddParticleVector(InOutBodyB.Positions, VertexIndexB, ContactNormal * (-InverseMassB * PenetrationCorrection));
 	RecordContact(InOutBodyA, VertexIndexA, &InOutBodyB, VertexIndexB, ContactNormal);
 }
 
-void FCollisionSolver::SolveDynamic(const std::vector<std::unique_ptr<FBody>>& Bodies, FSoftContactSolver& InOutSoftSolver, FStats& InOutStats)
+FOperationResult FCollisionSolver::SolveDynamic(const std::vector<std::unique_ptr<FBody>>& Bodies, FSoftContactSolver& InOutSoftContactSolver, FSoftContactStats& InOutStats)
 {
 	//Hard - Ball , Hard - Soft
 	CollectBodies(Bodies);
@@ -108,7 +118,20 @@ void FCollisionSolver::SolveDynamic(const std::vector<std::unique_ptr<FBody>>& B
 
 	//Soft - Soft
 	CollectSoftPairs();
-	SolveSoftPairs(InOutSoftSolver, InOutStats);
+
+	if (!SoftPairs.empty())
+	{
+		const FOperationResult PreparationResult = InOutSoftContactSolver.Prepare(SoftContactParticipants);
+
+		if (!PreparationResult)
+		{
+			return PreparationResult;
+		}
+
+		SolveSoftPairs(InOutSoftContactSolver, InOutStats);
+	}
+
+	return {};
 }
 
 void FCollisionSolver::CollectBodies(const std::vector<std::unique_ptr<FBody>>& Bodies)
@@ -160,6 +183,7 @@ void FCollisionSolver::SolveBallContacts()
 		{
 			const FVector3D CenterOffset = SoftBody->GetCenter() - ReadParticleVector(Ball->GetPositions(), 0);
 			const double CombinedRadius = SoftBody->GetRadius() + Ball->GetRadius();
+
 			if (CenterOffset.Dot(CenterOffset) > CombinedRadius * CombinedRadius)
 			{
 				continue;
@@ -179,6 +203,7 @@ void FCollisionSolver::CollectSoftPairs()
 	{
 		SoftBody->UpdateBounds();
 	}
+
 	for (std::size_t FirstBodyIndex = 0; FirstBodyIndex < SoftBodies.size(); ++FirstBodyIndex)
 	{
 		for (std::size_t SecondBodyIndex = FirstBodyIndex + 1; SecondBodyIndex < SoftBodies.size(); ++SecondBodyIndex)
@@ -187,15 +212,19 @@ void FCollisionSolver::CollectSoftPairs()
 			FSoftBody* BodyB = SoftBodies[SecondBodyIndex];
 			const FVector3D CenterOffset = BodyA->GetCenter() - BodyB->GetCenter();
 			const double CombinedRadius = BodyA->GetRadius() + BodyB->GetRadius();
+
 			if (CenterOffset.Dot(CenterOffset) > CombinedRadius * CombinedRadius)
 			{
 				continue;
 			}
+
 			if (AreBoundsSeparated(*BodyA, *BodyB))
 			{
 				continue;
 			}
+
 			SoftPairs.emplace_back(BodyA, BodyB);
+
 			for (FSoftBody* Body : {BodyA, BodyB})
 			{
 				if (std::find(SoftContactParticipants.begin(), SoftContactParticipants.end(), Body) == SoftContactParticipants.end())
@@ -207,27 +236,25 @@ void FCollisionSolver::CollectSoftPairs()
 	}
 }
 
-void FCollisionSolver::SolveSoftPairs(FSoftContactSolver& InOutSoftSolver, FStats& InOutStats)
+void FCollisionSolver::SolveSoftPairs(FSoftContactSolver& InOutSoftContactSolver, FSoftContactStats& InOutStats)
 {
-	if (SoftPairs.empty())
-	{
-		return;
-	}
-	InOutSoftSolver.Prepare(SoftContactParticipants);
 	// 모든 몸체 쌍이 같은 기하 스냅샷에서 접촉을 수집한 뒤 투영합니다.
 	for (const std::pair<FSoftBody*, FSoftBody*>& Pair : SoftPairs)
 	{
-		InOutSoftSolver.Generate(Pair.first, Pair.second, SoftContacts);
+		InOutSoftContactSolver.Generate(Pair.first, Pair.second, SoftContacts);
 	}
+
 	for (const FContact& Contact : SoftContacts)
 	{
-		if (InOutSoftSolver.Project(Contact))
+		if (InOutSoftContactSolver.Project(Contact))
 		{
 			Contacts.push_back(Contact);
 		}
 	}
+
 	InOutStats.BroadPhasePairs += static_cast<double>(SoftPairs.size());
-	InOutStats.Accumulate(InOutSoftSolver.GetStats());
+	InOutStats.Accumulate(InOutSoftContactSolver.GetStats());
+
 	for (FSoftBody* Body : SoftContactParticipants)
 	{
 		Body->UpdateBounds();
@@ -237,8 +264,10 @@ void FCollisionSolver::SolveSoftPairs(FSoftContactSolver& InOutSoftSolver, FStat
 void FCollisionSolver::SolveStatic(FBody& InOutBody, const std::vector<FObstacle>& Obstacles, const FSettings& Settings, bool bRecordContacts)
 {
 	const double ParticleRadius = InOutBody.IsSoft() ? 0 : InOutBody.GetRadius();
+
 	// 구체 반지름을 제외한 중심의 축별 허용 반폭입니다. 연체 입자는 반지름 0으로 검사합니다.
 	const double Limit = std::max(0.0, Settings.Bounds - ParticleRadius);
+
 	for (std::uint32_t VertexIndex = 0; VertexIndex < InOutBody.GetVertexCount(); ++VertexIndex)
 	{
 		if (!InOutBody.GetInverseMass()[VertexIndex])
@@ -252,6 +281,7 @@ void FCollisionSolver::SolveStatic(FBody& InOutBody, const std::vector<FObstacle
 		{
 			FVector3D ContactNormal{};
 			const bool bProjected = ProjectBoxObstacle(InOutBody, VertexIndex, Obstacle, ParticleRadius, ContactNormal);
+
 			if (bProjected && bRecordContacts)
 			{
 				RecordContact(InOutBody, VertexIndex, nullptr, 0, ContactNormal, Obstacle.Id);
@@ -263,9 +293,11 @@ void FCollisionSolver::SolveStatic(FBody& InOutBody, const std::vector<FObstacle
 void FCollisionSolver::SolveBoundaryContact(FBody& InOutBody, std::uint32_t VertexIndex, double Limit, bool bRecordContacts)
 {
 	const std::size_t PositionOffset = std::size_t(VertexIndex) * 3;
+
 	for (EAxis Axis : AllAxes)
 	{
 		FVector3D Normal{};
+
 		if (InOutBody.GetPositions()[PositionOffset + ToIndex(Axis)] >= Limit)
 		{
 			InOutBody.Positions[PositionOffset + ToIndex(Axis)] = Limit;
@@ -280,6 +312,7 @@ void FCollisionSolver::SolveBoundaryContact(FBody& InOutBody, std::uint32_t Vert
 		{
 			continue;
 		}
+
 		if (bRecordContacts)
 		{
 			RecordContact(InOutBody, VertexIndex, nullptr, 0, Normal);
@@ -293,12 +326,16 @@ bool FCollisionSolver::ProjectBoxObstacle(FBody& InOutBody, std::uint32_t Vertex
 	const FVector3D LocalPosition = ReadParticleVector(InOutBody.GetPositions(), VertexIndex) - Obstacle.Position;
 	const FVector3D HalfExtent = Obstacle.Size * 0.5;
 	FVector3D ClosestPoint{};
+
 	for (EAxis Axis : AllAxes)
 	{
 		ClosestPoint[Axis] = std::clamp(LocalPosition[Axis], -HalfExtent[Axis], HalfExtent[Axis]);
 	}
+
 	OutNormal = LocalPosition - ClosestPoint;
+
 	const double DistanceSquared = OutNormal.Dot(OutNormal);
+
 	if (DistanceSquared > ParticleRadius * ParticleRadius)
 	{
 		return false;
@@ -309,6 +346,7 @@ bool FCollisionSolver::ProjectBoxObstacle(FBody& InOutBody, std::uint32_t Vertex
 		const double Distance = std::sqrt(DistanceSquared);
 		OutNormal = OutNormal * (1 / Distance);
 		AddParticleVector(InOutBody.Positions, VertexIndex, OutNormal * (ParticleRadius - Distance));
+
 		return true;
 	}
 
@@ -318,6 +356,7 @@ bool FCollisionSolver::ProjectBoxObstacle(FBody& InOutBody, std::uint32_t Vertex
 	OutNormal = {};
 	OutNormal[Axis] = LocalPosition[Axis] >= 0 ? 1 : -1;
 	InOutBody.Positions[PositionOffset + ToIndex(Axis)] = Obstacle.Position[Axis] + OutNormal[Axis] * (HalfExtent[Axis] + ParticleRadius);
+
 	return true;
 }
 
@@ -327,6 +366,7 @@ void FCollisionSolver::Restitute(const FSettings& Settings)
 	{
 		const double TargetNormalVelocity = Contact.IncomingNormalVelocity < 0 ? -Settings.Restitution * Contact.IncomingNormalVelocity : Contact.IncomingNormalVelocity;
 		const double InverseMassA = Contact.BodyA->GetInverseMass()[Contact.ParticleIndexA];
+
 		if (Contact.bSoft)
 		{
 			RestituteSoftContact(Contact, TargetNormalVelocity, InverseMassA);
@@ -343,6 +383,7 @@ void FCollisionSolver::RestituteSoftContact(const FContact& Contact, double Targ
 	// A 입자와 B 표면 정점의 무게중심 가중 역질량을 합칠 반발 계산의 분모입니다.
 	double EffectiveInverseMass = InverseMassA;
 	FVector3D SurfaceVelocity{};
+
 	for (int TriangleCornerIndex = 0; TriangleCornerIndex < 3; ++TriangleCornerIndex)
 	{
 		const std::uint32_t VertexIndex = Contact.Indices[TriangleCornerIndex];
@@ -350,13 +391,17 @@ void FCollisionSolver::RestituteSoftContact(const FContact& Contact, double Targ
 		EffectiveInverseMass += Contact.BodyB->GetInverseMass()[VertexIndex] * Weight * Weight;
 		SurfaceVelocity = SurfaceVelocity + ReadParticleVector(Contact.BodyB->GetVelocities(), VertexIndex) * Weight;
 	}
+
 	if (EffectiveInverseMass <= 0)
 	{
 		return;
 	}
+
 	const double CurrentNormalVelocity = (ReadParticleVector(Contact.BodyA->GetVelocities(), Contact.ParticleIndexA) - SurfaceVelocity).Dot(Contact.Normal);
 	const double NormalImpulse = (TargetNormalVelocity - CurrentNormalVelocity) / EffectiveInverseMass;
+
 	AddParticleVector(Contact.BodyA->Velocities, Contact.ParticleIndexA, Contact.Normal * (InverseMassA * NormalImpulse));
+
 	for (int TriangleCornerIndex = 0; TriangleCornerIndex < 3; ++TriangleCornerIndex)
 	{
 		AddParticleVector(Contact.BodyB->Velocities, Contact.Indices[TriangleCornerIndex], Contact.Normal * (-Contact.BodyB->GetInverseMass()[Contact.Indices[TriangleCornerIndex]] * Contact.Weights[TriangleCornerIndex] * NormalImpulse));
@@ -367,23 +412,31 @@ void FCollisionSolver::RestituteParticleContact(const FContact& Contact, double 
 {
 	// 고정 환경은 상대 몸체가 없으므로 역질량과 속도를 모두 0으로 취급합니다.
 	double InverseMassB = 0;
+
 	if (Contact.BodyB)
 	{
 		InverseMassB = Contact.BodyB->GetInverseMass()[Contact.ParticleIndexB];
 	}
+
 	const double InverseMassSum = InverseMassA + InverseMassB;
+
 	if (InverseMassSum == 0)
 	{
 		return;
 	}
+
 	FVector3D VelocityB{};
+
 	if (Contact.BodyB)
 	{
 		VelocityB = ReadParticleVector(Contact.BodyB->GetVelocities(), Contact.ParticleIndexB);
 	}
+
 	const double CurrentNormalVelocity = (ReadParticleVector(Contact.BodyA->GetVelocities(), Contact.ParticleIndexA) - VelocityB).Dot(Contact.Normal);
 	const double NormalImpulse = (TargetNormalVelocity - CurrentNormalVelocity) / InverseMassSum;
+
 	AddParticleVector(Contact.BodyA->Velocities, Contact.ParticleIndexA, Contact.Normal * (InverseMassA * NormalImpulse));
+
 	if (Contact.BodyB)
 	{
 		AddParticleVector(Contact.BodyB->Velocities, Contact.ParticleIndexB, Contact.Normal * (-InverseMassB * NormalImpulse));
@@ -395,10 +448,12 @@ void FCollisionSolver::Settle(const std::vector<std::unique_ptr<FBody>>& Bodies,
 	// 정적 겹침 해소 전 몸체별 위치 복사본입니다. 실제로 이동한 입자만 속도를 초기화할 때 비교합니다.
 	std::vector<std::vector<double>> PositionsBeforeProjection;
 	PositionsBeforeProjection.reserve(Bodies.size());
+
 	for (const std::unique_ptr<FBody>& Body : Bodies)
 	{
 		PositionsBeforeProjection.push_back(Body->GetPositions());
 	}
+
 	for (int Iteration = 0; Iteration < StaticSettlementIterations; ++Iteration)
 	{
 		for (const std::unique_ptr<FBody>& Body : Bodies)
@@ -406,12 +461,15 @@ void FCollisionSolver::Settle(const std::vector<std::unique_ptr<FBody>>& Bodies,
 			SolveStatic(*Body, Obstacles, Settings, false);
 		}
 	}
+
 	for (std::size_t BodyIndex = 0; BodyIndex < Bodies.size(); ++BodyIndex)
 	{
 		FBody& Body = *Bodies[BodyIndex];
 		const std::vector<double>& Positions = Body.GetPositions();
 		const std::vector<double>& OriginalPositions = PositionsBeforeProjection[BodyIndex];
+
 		std::copy(Positions.begin(), Positions.end(), Body.PreviousPositions.begin());
+
 		for (std::size_t VertexOffset = 0; VertexOffset < Positions.size(); VertexOffset += 3)
 		{
 			// 입자 하나의 XYZ가 모두 같은 경우에만 기존 속도를 유지합니다.
@@ -419,12 +477,14 @@ void FCollisionSolver::Settle(const std::vector<std::unique_ptr<FBody>>& Bodies,
 			{
 				continue;
 			}
+
 			for (EAxis Axis : AllAxes)
 			{
 				Body.PreSolveVelocities[VertexOffset + ToIndex(Axis)] = 0;
 				Body.Velocities[VertexOffset + ToIndex(Axis)] = 0;
 			}
 		}
+
 		Body.UpdateBounds();
 	}
 }

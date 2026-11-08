@@ -2,7 +2,7 @@
 #include "../../native/bindings/OwnerRegistry.h"
 #include "collision/SurfaceBvh.h"
 #include "collision/SurfaceTopology.h"
-#include "collision/TetrahedronSpatialIndex.h"
+#include "collision/TetrahedronPointQuery.h"
 #include "collision/TriangleGeometry.h"
 #include "simulation/PhysicsWorld.h"
 #include <algorithm>
@@ -10,10 +10,10 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <iostream>
 #include <limits>
-#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -67,22 +67,16 @@ namespace
 	{
 		if (!bCondition)
 		{
-			throw std::runtime_error(Reason);
+			std::cerr << "FAIL: " << Reason << '\n';
+			std::exit(EXIT_FAILURE);
 		}
 	}
 
-	template <typename Exception, typename Function>
+	template <EErrorCode Expected, typename Function>
 	void Rejects(Function Action, const char* Reason)
 	{
-		try
-		{
-			Action();
-		}
-		catch (const Exception&)
-		{
-			return;
-		}
-		throw std::runtime_error(Reason);
+		const FOperationResult Status = Action();
+		Require(Status.Code == Expected && !Status.Message.empty(), Reason);
 	}
 
 	std::vector<double> Tetra()
@@ -90,15 +84,17 @@ namespace
 		return {0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1};
 	}
 
-	void TetrahedronIndexPreservesCandidateOrderAndRebuild()
+	void TetrahedronQueryPreservesCandidateOrderAndRebuild()
 	{
 		std::vector<double> Positions = Tetra();
 		const std::vector<double> OtherTetrahedron = Tetra();
 		Positions.insert(Positions.end(), OtherTetrahedron.begin(), OtherTetrahedron.end());
+
 		const FIndices Tetrahedra{0, 1, 2, 3, 4, 5, 6, 7};
 		FSoftBody Body(Positions, {}, Tetrahedra, {});
-		FTetrahedronSpatialIndex Dense(Body, 1, 1E-10, 512);
+		FTetrahedronPointQuery Dense(Body, 1, 1E-10, 512);
 		Dense.Rebuild(Body);
+
 		double CandidateTests = 5;
 		FIndices Found{99};
 		Require(Dense.QueryContainingTetrahedra({0.1, 0.2, 0.3}, &Found, false, CandidateTests) && Found == FIndices{99, 1, 0} && CandidateTests == 7, "dense query changed candidate order, append semantics, or diagnostic accumulation");
@@ -108,7 +104,7 @@ namespace
 		CandidateTests = 0;
 		Require(!Dense.QueryContainingTetrahedra({0.9, 0.9, 0.9}, nullptr, true, CandidateTests) && CandidateTests == 2, "barycentric rejection did not count both bounded candidates");
 
-		FTetrahedronSpatialIndex Overflow(Body, 1, 1E-10, 1);
+		FTetrahedronPointQuery Overflow(Body, 1, 1E-10, 1);
 		Overflow.Rebuild(Body);
 		Found.clear();
 		CandidateTests = 0;
@@ -116,16 +112,19 @@ namespace
 
 		// 사용하지 않는 먼 정점으로 전체 경계만 넓혀 희소 셀 경로를 선택합니다.
 		Positions.insert(Positions.end(), {1E6, 1E6, 1E6});
+
 		FSoftBody SparseBody(Positions, {}, Tetrahedra, {});
-		FTetrahedronSpatialIndex Sparse(SparseBody, 1, 1E-10, 512);
+		FTetrahedronPointQuery Sparse(SparseBody, 1, 1E-10, 512);
 		Sparse.Rebuild(SparseBody);
 		Found.clear();
 		CandidateTests = 0;
 		Require(Sparse.GetActiveCellCount() > 0 && Sparse.GetOverflowTetrahedronCount() == 0 && Sparse.QueryContainingTetrahedra({0.1, 0.2, 0.3}, &Found, false, CandidateTests) && Found == FIndices{0, 1} && CandidateTests == 2, "sparse candidates lost their insertion order or containment");
+
 		for (std::size_t VertexIndex = 0; VertexIndex < Body.GetVertexCount(); ++VertexIndex)
 		{
 			Body.SetParticlePosition(VertexIndex, ReadParticleVector(Body.GetPositions(), static_cast<std::uint32_t>(VertexIndex)) + FVector3D{10, 0, 0});
 		}
+
 		Dense.Rebuild(Body);
 		Found.clear();
 		CandidateTests = 0;
@@ -134,41 +133,167 @@ namespace
 		Require(!Dense.QueryContainingTetrahedra({0.1, 0.2, 0.3}, nullptr, true, CandidateTests) && CandidateTests == 0, "rebuild retained stale cell candidates at the previous position");
 	}
 
+	void TetrahedronQueryRebuildSwitchesStorageAndRecoversGeometry()
+	{
+		std::vector<double> Positions = Tetra();
+		const std::vector<double> Duplicate = Tetra();
+		Positions.insert(Positions.end(), Duplicate.begin(), Duplicate.end());
+		Positions.insert(Positions.end(), {2, 2, 2});
+
+		FSoftBody Body(Positions, {}, {0, 1, 2, 3, 4, 5, 6, 7}, {});
+		FTetrahedronPointQuery Query(Body, 1, 1E-10, 512);
+
+		for (int Cycle = 0; Cycle < 3; ++Cycle)
+		{
+			for (const bool bSparse : {false, true, false})
+			{
+				// 사면체에 속하지 않는 정점으로 저장 방식만 전환합니다.
+				Body.SetParticlePosition(8, bSparse ? FVector3D{1E6, 1E6, 1E6} : FVector3D{2, 2, 2});
+				Query.Rebuild(Body);
+
+				FIndices Found;
+				double CandidateTests = 0;
+				const FIndices Expected = bSparse ? FIndices{0, 1} : FIndices{1, 0};
+				Require(Query.QueryContainingTetrahedra({0.1, 0.2, 0.3}, &Found, false, CandidateTests) && Found == Expected && CandidateTests == 2, "storage switch retained stale candidates or changed their order");
+			}
+
+			Body.SetParticlePosition(7, {0, 0, 0});
+			Query.Rebuild(Body);
+
+			FIndices Found;
+			double CandidateTests = 0;
+			Require(Query.QueryContainingTetrahedra({0.1, 0.2, 0.3}, &Found, false, CandidateTests) && Found == FIndices{0} && CandidateTests == 1, "collapsed tetrahedron retained valid geometry");
+			Body.SetParticlePosition(7, {0, 0, -1});
+			Query.Rebuild(Body);
+			Found.clear();
+			CandidateTests = 0;
+			Require(Query.QueryContainingTetrahedra({0.1, 0.2, -0.3}, &Found, false, CandidateTests) && Found == FIndices{1} && CandidateTests == 1, "inverted tetrahedron did not recover after collapse");
+			Body.SetParticlePosition(7, {0, 0, 1});
+		}
+	}
+
 	void SurfaceBvhPreservesTieOrderAndIndependentValues()
 	{
 		// 같은 위치의 서로 다른 삼각형 아홉 개로 내부 노드와 동률 최근접 후보를 함께 만듭니다.
 		std::vector<double> Positions;
 		FSurfaceTopology Surface;
+
 		for (std::uint32_t TriangleIndex = 0; TriangleIndex < 9; ++TriangleIndex)
 		{
 			Positions.insert(Positions.end(), {0, 0, 0, 1, 0, 0, 0, 1, 0});
+
 			for (std::uint32_t CornerIndex = 0; CornerIndex < 3; ++CornerIndex)
 			{
 				Surface.Indices.push_back(TriangleIndex * 3 + CornerIndex);
 				Surface.Vertices.push_back(TriangleIndex * 3 + CornerIndex);
 			}
 		}
+
 		FSurfaceBvh Bvh(Surface, Positions);
 		Bvh.Refit(Positions);
 		Surface.Indices[0] = 999;
+
 		double TriangleTests = 3;
 		const std::optional<FSurfaceClosestPoint> Hit = Bvh.FindNearestPoint({0.25, 0.25, 1}, Positions, TriangleTests);
 		Require(Hit.has_value() && Hit->VertexIndices == std::array<std::uint32_t, 3>{12, 13, 14} && Hit->ClosestPoint.Position == FVector3D{0.25, 0.25, 0} && Hit->ClosestPoint.Weights == std::array<double, 3>{0.5, 0.25, 0.25} && Hit->ClosestPoint.DistanceSquared == 1 && TriangleTests == 12, "BVH changed stable construction, right-first tie traversal, or strict nearest selection");
+
 		FSurfaceTopology Snapshot = Bvh.GetTopology();
 		Snapshot.Indices[0] = 888;
 		Require(Bvh.GetTopology().Indices[0] == 0 && Bvh.GetSurfaceVertexCount() == 27 && Bvh.GetSurfaceVertexIndex(12) == 12, "BVH topology aliases constructor input or diagnostic snapshots");
+
 		for (std::size_t Offset = 2; Offset < Positions.size(); Offset += 3)
 		{
 			Positions[Offset] = 2;
 		}
+
 		Bvh.Refit(Positions);
 		TriangleTests = 0;
+
 		const std::optional<FSurfaceClosestPoint> MovedHit = Bvh.FindNearestPoint({0.25, 0.25, 3}, Positions, TriangleTests);
 		Require(MovedHit.has_value() && MovedHit->VertexIndices == Hit->VertexIndices && MovedHit->ClosestPoint.Position == FVector3D{0.25, 0.25, 2} && Hit->ClosestPoint.Position == FVector3D{0.25, 0.25, 0} && TriangleTests == 9, "BVH refit, reusable traversal, or owned nearest-point result is stale");
+
 		FSurfaceBvh Empty({}, {});
 		Empty.Refit({});
 		TriangleTests = 7;
 		Require(Empty.IsEmpty() && !Empty.FindNearestPoint({}, {}, TriangleTests).has_value() && TriangleTests == 7, "empty surface manufactured a nearest point or triangle tests");
+	}
+
+	void SurfaceBvhPrunesAndRefitsReorderedGeometry()
+	{
+		// 서로 떨어진 YZ 평면 삼각형 32개입니다. 최근접점은 X만 평면에 맞추면 알 수 있습니다.
+		std::vector<double> Positions;
+		FSurfaceTopology Surface;
+
+		for (std::uint32_t TriangleIndex = 0; TriangleIndex < 32; ++TriangleIndex)
+		{
+			const double PlaneX = TriangleIndex * 4.0;
+			Positions.insert(Positions.end(), {PlaneX, 0, 0, PlaneX, 2, 0, PlaneX, 0, 2});
+
+			for (std::uint32_t CornerIndex = 0; CornerIndex < 3; ++CornerIndex)
+			{
+				Surface.Indices.push_back(TriangleIndex * 3 + CornerIndex);
+				Surface.Vertices.push_back(TriangleIndex * 3 + CornerIndex);
+			}
+		}
+
+		const std::vector<double> RestPositions = Positions;
+		FSurfaceBvh Bvh(Surface, RestPositions);
+
+		for (int Phase = 0; Phase < 3; ++Phase)
+		{
+			Positions = RestPositions;
+
+			if (Phase == 1)
+			{
+				// 잎 사이의 공간 순서를 섞고 전체를 이동합니다. 최초 분할을 유지한 Refit을 검사합니다.
+				for (std::uint32_t TriangleIndex = 0; TriangleIndex < 32; ++TriangleIndex)
+				{
+					const double PlaneX = -200.0 + ((TriangleIndex * 13) % 32) * 4.0;
+
+					for (std::size_t CornerIndex = 0; CornerIndex < 3; ++CornerIndex)
+					{
+						Positions[TriangleIndex * 9 + CornerIndex * 3] = PlaneX;
+					}
+				}
+			}
+
+			Bvh.Refit(Positions);
+
+			// 양쪽 가지와 각 잎의 경계를 번갈아 조회해 재사용 스택과 가지치기를 함께 확인합니다.
+			for (std::uint32_t TriangleIndex : {0U, 31U, 7U, 24U, 8U, 23U, 15U, 16U})
+			{
+				const double PlaneX = Positions[TriangleIndex * 9];
+				double TriangleTests = 5;
+				const std::optional<FSurfaceClosestPoint> Hit = Bvh.FindNearestPoint({PlaneX + 0.25, 0.5, 0.5}, Positions, TriangleTests);
+				Require(Hit.has_value() && Hit->VertexIndices == std::array<std::uint32_t, 3>{TriangleIndex * 3, TriangleIndex * 3 + 1, TriangleIndex * 3 + 2} && Hit->ClosestPoint.Position == FVector3D{PlaneX, 0.5, 0.5} && Hit->ClosestPoint.Weights == std::array<double, 3>{0.5, 0.25, 0.25} && Hit->ClosestPoint.DistanceSquared == 0.0625, "BVH pruning or refit lost the analytic nearest triangle after spatial reordering");
+				Require(TriangleTests > 5 && TriangleTests <= 37, "BVH triangle-test counter did not accumulate actual evaluations");
+
+				if (Phase != 1)
+				{
+					Require(TriangleTests == 13, "BVH did not prune the three separated leaves or restore pruning after refit");
+				}
+			}
+
+			Require(Bvh.GetTopology().Indices == Surface.Indices && Bvh.GetTopology().Vertices == Surface.Vertices && Bvh.GetTriangleCount() == 32, "BVH refit modified original topology or surface order");
+		}
+	}
+
+	void SurfaceBvhRefitsCollapsedLeaf()
+	{
+		FSurfaceTopology Surface{{0, 1, 2}, {0, 1, 2}};
+		std::vector<double> Positions{0, 0, 0, 2, 0, 0, 0, 2, 0};
+		FSurfaceBvh Bvh(Surface, Positions);
+		Positions = {3, 4, 5, 3, 4, 5, 3, 4, 5};
+		Bvh.Refit(Positions);
+
+		double TriangleTests = 0;
+		const std::optional<FSurfaceClosestPoint> CollapsedHit = Bvh.FindNearestPoint({3, 4, 7}, Positions, TriangleTests);
+		Require(CollapsedHit.has_value() && CollapsedHit->ClosestPoint.Position == FVector3D{3, 4, 5} && CollapsedHit->ClosestPoint.DistanceSquared == 4 && TriangleTests == 1, "zero-extent BVH leaf discarded its collapsed triangle");
+		Positions = {0, 0, 0, 2, 0, 0, 0, 2, 0};
+		Bvh.Refit(Positions);
+
+		const std::optional<FSurfaceClosestPoint> RestoredHit = Bvh.FindNearestPoint({0.5, 0.5, 1}, Positions, TriangleTests);
+		Require(RestoredHit.has_value() && RestoredHit->ClosestPoint.Position == FVector3D{0.5, 0.5, 0} && RestoredHit->ClosestPoint.DistanceSquared == 1 && TriangleTests == 2, "BVH leaf bounds did not recover after triangle collapse");
 	}
 
 	void Setup(FPhysicsWorld& World)
@@ -207,22 +332,25 @@ namespace
 		{
 			return std::make_pair(Reference.get().data(), Reference.get().size());
 		});
+
 		return Identity;
 	}
 
 	std::vector<std::vector<double>> State(const FBody& Body)
 	{
 		std::vector<std::vector<double>> Result{Body.GetPositions(), Body.GetPreviousPositions(), Body.GetVelocities(), Body.GetPreSolveVelocities(), Body.GetInverseMass()};
+
 		if (Body.IsSoft())
 		{
 			const FSoftBody& SoftBody = static_cast<const FSoftBody&>(Body);
 			Result.push_back(SoftBody.GetEdgeLambdas());
 			Result.push_back(SoftBody.GetVolumeLambdas());
 		}
+
 		return Result;
 	}
 
-	std::array<double, 8> StatsValues(const FStats& Stats)
+	std::array<double, 8> StatsValues(const FSoftContactStats& Stats)
 	{
 		return {Stats.BroadPhasePairs, Stats.CandidateTests, Stats.Contacts, Stats.GeneratedContacts, Stats.MaxPenetration, Stats.OverflowTets, Stats.HashCells, Stats.SurfaceTriangleTests};
 	}
@@ -237,6 +365,7 @@ namespace
 		FSoftBody Body({0, 0, 0}, {}, {}, {});
 		Require(Body.GetEdgeLambdas().empty() && Body.GetVolumeLambdas().empty(), "empty lambdas are not empty");
 		Require(Body.GetEdgeLambdas().begin() == Body.GetEdgeLambdas().end(), "empty lambda iterators differ");
+
 		const std::vector<double>& Values = Body.GetPositions();
 		const std::reference_wrapper<const std::vector<double>> Observer = std::cref(Values);
 		const std::vector<double> Snapshot = Values;
@@ -249,16 +378,19 @@ namespace
 	{
 		FPhysicsWorld World;
 		Setup(World);
+
 		FSoftBody* Body = World.AddSoft(Tetra(), {0, 1}, {0, 1, 2, 3}, {});
 		const FBufferReferences Original = GetBuffers(*Body);
 		const FStorageIdentity OriginalStorage = GetStorageIdentity(*Body);
 		const auto Verify = [&]
 		{
 			const FBufferReferences Current = GetBuffers(*Body);
+
 			for (std::size_t I = 0; I < Original.size(); ++I)
 			{
 				Require(&Original[I].get() == &Current[I].get(), "borrowed vector reference changed");
 			}
+
 			Require(GetStorageIdentity(*Body) == OriginalStorage, "borrowed storage address or length changed");
 		};
 		Require(Original[0].get().size() == 12 && Original[4].get().size() == 4 && Original[5].get().size() == 1 && Original[6].get().size() == 1, "fixture does not exercise all seven nonempty buffers");
@@ -270,10 +402,12 @@ namespace
 		Verify();
 		World.Reset();
 		Verify();
+
 		for (int I = 0; I < 128; ++I)
 		{
 			World.AddBall(0.1, {20.0 + I, 0, 0});
 		}
+
 		Require(World.GetBodies().front().get() == Body, "body address changed when world grew");
 		Verify();
 		Body->SetParticlePosition(0, {3, 0, 0});
@@ -284,10 +418,12 @@ namespace
 	{
 		FPhysicsWorld World;
 		Setup(World);
+
 		FSoftBody* Body = World.AddSoft(Tetra(), {0, 1}, {0, 1, 2, 3}, {}, {10, 0, 0});
 		Body->SetParticlePosition(1, {11.2, 0, 0});
 		World.AddSoft({10.1, 0.2, 0.3}, {}, {}, {});
 		World.AddBall(1, {2, 0, 0});
+
 		FObstacle Obstacle;
 		Obstacle.Id = 1;
 		Obstacle.Size = {2, 2, 2};
@@ -297,11 +433,14 @@ namespace
 		Require(World.Step(0.1), "fixture failed to advance");
 		Require(World.GetStats().Contacts > 0 && !World.GetHits().empty() && World.GetSimulationTime() > 0, "fixture must contain diagnostics and bumper history");
 		Require(Body->GetEdgeLambdas()[0] != 0 && Body->GetVolumeLambdas()[0] != 0, "fixture must contain accumulated edge and volume lambdas");
+
 		std::vector<std::vector<std::vector<double>>> Before;
+
 		for (const std::unique_ptr<FBody>& Item : World.GetBodies())
 		{
 			Before.push_back(State(*Item));
 		}
+
 		const std::array<double, 8> OldStats = StatsValues(World.GetStats());
 		const std::vector<FHit> OldHits = World.GetHits();
 		const double OldTime = World.GetSimulationTime();
@@ -311,9 +450,11 @@ namespace
 			{
 				Require(Before[I] == State(*World.GetBodies()[I]), "no-op or rejected step changed body state");
 			}
+
 			Require(OldStats == StatsValues(World.GetStats()), "no-op or rejected step cleared diagnostics");
 			Require(OldTime == World.GetSimulationTime(), "no-op or rejected step changed time");
 			Require(OldHits.size() == World.GetHits().size(), "no-op or rejected step cleared hits");
+
 			for (std::size_t I = 0; I < OldHits.size(); ++I)
 			{
 				const FHit& A = OldHits[I];
@@ -323,6 +464,7 @@ namespace
 		};
 		Require(!World.Step(0), "zero step advanced");
 		Verify();
+
 		const std::array<double, 13> OriginalSettings = SettingsValues(World.GetSettings());
 		std::vector<FSettings> InvalidSettings(7, World.GetSettings());
 		InvalidSettings[0].Substeps = 0;
@@ -332,21 +474,27 @@ namespace
 		InvalidSettings[4].Bounds = 0;
 		InvalidSettings[5].Gravity.Y = std::numeric_limits<double>::infinity();
 		InvalidSettings[6].EdgeCompliance = -1;
+
 		for (const FSettings& Candidate : InvalidSettings)
 		{
-			Rejects<std::range_error>([&]
+			Rejects<EErrorCode::OutOfRange>([&]
 			{
-				World.Configure(Candidate);
+				return World.Configure(Candidate);
 			}, "configure accepted an invalid candidate");
 			Require(SettingsValues(World.GetSettings()) == OriginalSettings, "rejected configure partially changed settings");
 			Require(!World.Step(0), "rejected configure corrupted the zero-step contract");
 			Verify();
 		}
-		Rejects<std::range_error>([&]
+
+		Rejects<EErrorCode::OutOfRange>([&]
 		{
-			World.Step(std::numeric_limits<double>::denorm_min());
+			FOperationResult Status;
+			World.Step(std::numeric_limits<double>::denorm_min(), &Status);
+
+			return Status;
 		}, "unrepresentable substep scale accepted");
 		Verify();
+
 		FSettings ChangedSettings = World.GetSettings();
 		ChangedSettings.Dt = 0;
 		ChangedSettings.Gravity = {1, -2, 3};
@@ -362,18 +510,25 @@ namespace
 		const std::uint32_t First = Owners.RegisterOwner(std::make_unique<int>(7));
 		const std::uint32_t OtherType = Owners.RegisterOwner(std::make_unique<double>(2.5));
 		Require(First != OtherType && First != 0 && OtherType != 0, "owner kinds must share one nonzero token sequence");
-		Rejects<std::invalid_argument>([&]
+		Rejects<EErrorCode::InvalidArgument>([&]
 		{
-			Owners.Get<double>(First);
+			FOperationResult Status;
+			Owners.Get<double>(First, &Status);
+
+			return Status;
 		}, "wrong owner type was accepted");
 		Owners.Destroy<double>(First);
 		Require(*Owners.Get<int>(First) == 7, "wrong-type destruction deleted the owner");
 		Owners.Destroy<int>(First);
+
 		const std::uint32_t Next = Owners.RegisterOwner(std::make_unique<int>(9));
 		Require(Next != First, "owner recreation reused a stale token");
-		Rejects<std::invalid_argument>([&]
+		Rejects<EErrorCode::InvalidArgument>([&]
 		{
-			Owners.Get<int>(First);
+			FOperationResult Status;
+			Owners.Get<int>(First, &Status);
+
+			return Status;
 		}, "stale owner token selected a replacement");
 		Owners.Destroy<int>(First);
 		Require(*Owners.Get<int>(Next) == 9 && *Owners.Get<double>(OtherType) == 2.5, "stale destruction affected a live owner");
@@ -401,25 +556,36 @@ namespace
 		{
 			// 동일 발급 경로의 마지막 유효 ID와 소진을 작은 상한으로 재현합니다.
 			TOwnerRegistry<FTrackedOwner> Owners(2);
-			Rejects<std::invalid_argument>([&]
+			Rejects<EErrorCode::InvalidArgument>([&]
 			{
-				Owners.RegisterOwner(std::unique_ptr<FTrackedOwner>{});
+				FOperationResult Status;
+				Owners.RegisterOwner(std::unique_ptr<FTrackedOwner>{}, &Status);
+
+				return Status;
 			}, "null owner was accepted");
+
 			const std::uint32_t First = Owners.RegisterOwner(std::make_unique<FTrackedOwner>(LiveCount));
 			const std::uint32_t Last = Owners.RegisterOwner(std::make_unique<FTrackedOwner>(LiveCount));
 			Require(First == 1 && Last == 2 && LiveCount == 2, "last allowed token was not issued exactly once");
-			Rejects<std::overflow_error>([&]
+			Rejects<EErrorCode::ResourceExhausted>([&]
 			{
-				Owners.RegisterOwner(std::make_unique<FTrackedOwner>(LiveCount));
+				FOperationResult Status;
+				Owners.RegisterOwner(std::make_unique<FTrackedOwner>(LiveCount), &Status);
+
+				return Status;
 			}, "owner token exhaustion wrapped or accepted another owner");
 			Require(LiveCount == 2 && Owners.Get<FTrackedOwner>(Last), "failed registration leaked an owner or discarded a live one");
 			Owners.Destroy<FTrackedOwner>(First);
-			Rejects<std::overflow_error>([&]
+			Rejects<EErrorCode::ResourceExhausted>([&]
 			{
-				Owners.RegisterOwner(std::make_unique<FTrackedOwner>(LiveCount));
+				FOperationResult Status;
+				Owners.RegisterOwner(std::make_unique<FTrackedOwner>(LiveCount), &Status);
+
+				return Status;
 			}, "owner deletion allowed an expired token to be reused");
 			Require(LiveCount == 1, "registration failure or destruction leaked an owner");
 		}
+
 		Require(LiveCount == 0, "registry destruction did not release its remaining owners");
 	}
 
@@ -430,9 +596,11 @@ namespace
 		First.Id = 1;
 		First.bBumper = true;
 		First.Strength = 2;
+
 		FObstacle Second = First;
 		Second.Id = 2;
 		Second.Strength = 4;
+
 		const std::vector<FObstacle> Obstacles{First, Second};
 		const auto Contact = [&](std::uint32_t Vertex, std::uint32_t Obstacle, FVector3D Normal, double Incoming = 0)
 		{
@@ -442,8 +610,10 @@ namespace
 			Result.Obstacle = Obstacle;
 			Result.Normal = Normal;
 			Result.IncomingNormalVelocity = Incoming;
+
 			return Result;
 		};
+
 		const std::vector<FContact> Contacts{Contact(0, 2, {1, 0, 0}, -2), Contact(0, 1, {-1, 0, 0}), Contact(0, 2, {0, 1, 0}, -100), Contact(1, 2, {0, 1, 0}), Contact(2, 2, {0, 0, 1})};
 		FBumperSystem Bumpers;
 		const auto VerifyFire = [&]
@@ -464,6 +634,7 @@ namespace
 		Bumpers.BeginFrame();
 		Bumpers.Apply({}, {}, 0.3, 0.01, 0.5);
 		Require(Bumpers.GetHits().empty(), "empty contact batch replayed stale groups");
+
 		const std::vector<double> OldVelocity = Body.GetVelocities();
 		FBall Replacement(1, {});
 		FContact ReplacementContact = Contact(0, 1, {0, 0, 1});
@@ -480,16 +651,21 @@ namespace
 		Contact.BodyA = &Body;
 		Contact.Obstacle = 40;
 		Contact.Normal = {1, 0, 0};
+
 		FObstacle First;
 		First.Id = 40;
 		First.bBumper = true;
 		First.Strength = 2;
+
 		FObstacle Duplicate = First;
 		Duplicate.Strength = 9;
+
 		FObstacle Lower = First;
 		Lower.Id = 3;
+
 		FObstacle Higher = First;
 		Higher.Id = 200;
+
 		std::vector<FObstacle> Obstacles{Higher, First, Lower, Duplicate};
 		FBumperSystem Bumpers;
 		Bumpers.Apply({Contact}, Obstacles, 0, 0.01, 0);
@@ -506,6 +682,7 @@ namespace
 		Body.Reset();
 		Bumpers.Apply({Contact}, {Lower, Higher}, 0.31, 0.01, 0);
 		Require(Bumpers.GetHits().empty() && ReadParticleVector(Body.GetVelocities(), 0) == FVector3D{}, "missing ID matched a neighboring indexed obstacle");
+
 		// 0.2초 안에 같은 ID가 복원되어도 제거 시점에 쿨다운 상태를 정리해야 합니다.
 		Bumpers.Apply({Contact}, {First}, 0.32, 0.01, 0);
 		Require(Bumpers.GetHits().size() == 1 && Bumpers.GetHits()[0].Strength == 2, "removed obstacle retained stale cooldown state");
@@ -531,13 +708,16 @@ namespace
 		const FIndices Expected{1, 2, 3, 0, 2, 3, 0, 1, 3, 2, 1, 4, 0, 1, 4, 0, 2, 4};
 		FSurfaceTopology Automatic = BuildSurfaceTopology(Tets, {});
 		Require(Automatic.Indices == Expected && Automatic.Vertices == FIndices{1, 2, 3, 0, 4}, "exterior faces or unique vertices lost first-appearance order");
+
 		FIndices Supplied = Expected;
 		std::reverse(Supplied.begin(), Supplied.end());
+
 		const FSurfaceTopology Explicit = BuildSurfaceTopology(Tets, Supplied);
 		Require(Explicit.Indices == Expected && Explicit.Vertices == Automatic.Vertices, "supplied surface ordering changed canonical tetrahedron boundary traversal");
 		Automatic.Indices[0] = 99;
 		Supplied.clear();
 		Require(Explicit.Indices == Expected && Tets == FIndices{0, 1, 2, 3, 0, 2, 1, 4}, "topology result unexpectedly aliases an input or another result");
+
 		const FSurfaceTopology Empty = BuildSurfaceTopology({}, {});
 		Require(Empty.Indices.empty() && Empty.Vertices.empty(), "empty topology retained previous exterior faces");
 	}
@@ -546,28 +726,38 @@ namespace
 	{
 		const FIndices Tet{0, 1, 2, 3};
 		const FIndices Surface{1, 2, 3, 0, 2, 3, 0, 1, 3, 0, 1, 2};
+
 		for (const FIndices& Invalid : std::vector<FIndices>{{0, 1, 2}, {0, 1, 2, 2}, {0, 1, 2, 3, 0, 1, 2, 4, 0, 1, 2, 5}})
 		{
-			Rejects<std::invalid_argument>([&]
+			Rejects<EErrorCode::InvalidArgument>([&]
 			{
-				BuildSurfaceTopology(Invalid, {});
+				FOperationResult Status;
+				BuildSurfaceTopology(Invalid, {}, &Status);
+
+				return Status;
 			}, "invalid tuple, repeated vertex, or non-manifold face was accepted");
 		}
+
 		for (const FIndices& Invalid : std::vector<FIndices>{{0, 1}, {1, 2, 3}, {1, 2, 3, 0, 2, 3, 0, 1, 3, 1, 2, 3}, {1, 2, 3, 0, 2, 3, 0, 1, 3, 0, 1, 4}})
 		{
-			Rejects<std::invalid_argument>([&]
+			Rejects<EErrorCode::InvalidArgument>([&]
 			{
-				BuildSurfaceTopology(Tet, Invalid);
+				FOperationResult Status;
+				BuildSurfaceTopology(Tet, Invalid, &Status);
+
+				return Status;
 			}, "malformed, missing, duplicate, or non-boundary surface was accepted");
 		}
+
 		FSoftBody Valid(Tetra(), {}, Tet, Surface);
 		FSoftBody Invalid(Tetra(), {}, Tet, {1, 2, 3});
 		FSoftContactSolver Solver;
 		Solver.Prepare({&Valid});
+
 		const FContactBodyInfo Before = Solver.GetBodyInfo(&Valid).value();
-		Rejects<std::invalid_argument>([&]
+		Rejects<EErrorCode::InvalidArgument>([&]
 		{
-			Solver.Prepare({&Invalid});
+			return Solver.Prepare({&Invalid});
 		}, "incomplete exterior surface reached the contact cache");
 		Require(!Solver.GetBodyInfo(&Invalid).has_value() && Solver.GetBodyInfo(&Valid)->SurfaceIndices == Before.SurfaceIndices && Solver.Query(&Valid, {0.1, 0.2, 0.3}) == FIndices{0}, "failed topology construction published a partial cache or damaged a prepared body");
 	}
@@ -577,21 +767,26 @@ namespace
 		static_assert(!std::is_copy_constructible_v<FContactSession>);
 		static_assert(!std::is_move_constructible_v<FContactSession>);
 		static_assert(std::is_same_v<decltype(std::declval<const FContactSession&>().GetContact(0)), const FContact&>);
+
 		FSoftBody Source({0.1, 0.2, 0.3}, {}, {}, {});
 		FSoftBody Target(Tetra(), {}, {0, 1, 2, 3}, {});
 		FContactSession Session(FContactOptions{});
 		Session.Prepare({&Source, &Target});
+
 		const FGeneratedContactRange First = Session.Generate(&Source, &Target);
 		Require(First.Begin == 0 && First.End > First.Begin && First.Generation == 1, "initial prepared session did not produce a valid contact range");
+
 		const FContact Contact = Session.GetContact(First.Begin);
 		Require(Contact.BodyA == &Source && Contact.BodyB == &Target, "session changed source/target contact identity");
+
 		const FGeneratedContactRange Second = Session.Generate(&Source, &Target);
 		Require(Second.Begin == First.End && Second.End > Second.Begin && Second.Generation == First.Generation, "generate discarded earlier contacts or advanced the preparation generation");
+
 		const std::vector<double> SourceBefore = Source.GetPositions();
 		const std::vector<double> TargetBefore = Target.GetPositions();
-		Rejects<std::invalid_argument>([&]
+		Rejects<EErrorCode::InvalidArgument>([&]
 		{
-			Session.Prepare({nullptr});
+			return Session.Prepare({nullptr});
 		}, "session preparation accepted a null body");
 		Require(Source.GetPositions() == SourceBefore && Target.GetPositions() == TargetBefore && Session.GetContact(First.Begin).Normal == Contact.Normal, "failed preparation changed positions or the existing batch");
 		Require(Session.Project(static_cast<unsigned>(First.Begin), First.Generation), "failed preparation invalidated an earlier valid contact");
@@ -599,25 +794,36 @@ namespace
 		Source.Reset();
 		Target.Reset();
 		Session.Prepare({&Source, &Target});
+
 		const FGeneratedContactRange Fresh = Session.Generate(&Source, &Target);
 		Require(Fresh.Begin == 0 && Fresh.Generation == First.Generation + 1, "successful preparation did not clear contacts and advance generation");
+
 		const std::vector<double> BeforeRejectedProjection = Source.GetPositions();
 		const std::vector<double> BeforeRejectedTarget = Target.GetPositions();
-		Rejects<std::invalid_argument>([&]
+		Rejects<EErrorCode::InvalidArgument>([&]
 		{
-			Session.Project(static_cast<unsigned>(Fresh.Begin), First.Generation);
+			FOperationResult Status;
+			Session.Project(static_cast<unsigned>(Fresh.Begin), First.Generation, &Status);
+
+			return Status;
 		}, "stale generation projected a contact from the replacement batch");
-		Rejects<std::invalid_argument>([&]
+		Rejects<EErrorCode::InvalidArgument>([&]
 		{
-			Session.Project(static_cast<unsigned>(Fresh.End), Fresh.Generation);
+			FOperationResult Status;
+			Session.Project(static_cast<unsigned>(Fresh.End), Fresh.Generation, &Status);
+
+			return Status;
 		}, "out-of-range contact index reached projection");
 		Require(Source.GetPositions() == BeforeRejectedProjection && Target.GetPositions() == BeforeRejectedTarget, "rejected contact token partially changed particle positions");
 		Session.Prepare({});
-		Rejects<std::invalid_argument>([&]
+		Rejects<EErrorCode::InvalidArgument>([&]
 		{
-			Session.Project(static_cast<unsigned>(Fresh.Begin), Fresh.Generation);
+			FOperationResult Status;
+			Session.Project(static_cast<unsigned>(Fresh.Begin), Fresh.Generation, &Status);
+
+			return Status;
 		}, "empty successful preparation retained the previous contact batch");
-		Require(StatsValues(Session.GetStats()) == StatsValues(FStats{}), "empty session preparation retained previous diagnostics");
+		Require(StatsValues(Session.GetStats()) == StatsValues(FSoftContactStats{}), "empty session preparation retained previous diagnostics");
 	}
 
 	void BoxObstacleGeometryValidationIsAtomic()
@@ -628,38 +834,27 @@ namespace
 		Box.Position = {1, 2, 3};
 		Box.Size = {2, 4, 6};
 		World.SetObstacles({Box});
+
 		const std::array<double, 4> InvalidDimensions{0, -1, std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity()};
+
 		for (const EAxis Axis : AllAxes)
 		{
 			for (const double InvalidDimension : InvalidDimensions)
 			{
 				FObstacle InvalidBox = Box;
 				InvalidBox.Size[Axis] = InvalidDimension;
-				bool bRejected = false;
-				try
-				{
-					World.SetObstacles({InvalidBox});
-				}
-				catch (const std::invalid_argument&)
-				{
-					bRejected = true;
-				}
+
+				bool bRejected = !World.SetObstacles({InvalidBox}).IsSuccess();
 				Require(bRejected && World.GetObstacles().size() == 1 && World.GetObstacles()[0].Id == Box.Id && World.GetObstacles()[0].Size == Box.Size && World.GetObstacles()[0].Position == Box.Position, "invalid box dimensions changed registered geometry");
+
 				if (std::isfinite(InvalidDimension))
 				{
 					continue;
 				}
+
 				InvalidBox = Box;
 				InvalidBox.Position[Axis] = InvalidDimension;
-				bRejected = false;
-				try
-				{
-					World.SetObstacles({InvalidBox});
-				}
-				catch (const std::invalid_argument&)
-				{
-					bRejected = true;
-				}
+				bRejected = !World.SetObstacles({InvalidBox}).IsSuccess();
 				Require(bRejected && World.GetObstacles()[0].Position == Box.Position && World.GetObstacles()[0].Size == Box.Size, "nonfinite box position changed registered geometry");
 			}
 		}
@@ -672,25 +867,32 @@ namespace
 		FSoftBody SilentBody(Positions, {}, {}, {}, {}, {1, 0});
 		FSettings Settings;
 		Settings.Bounds = 1;
+
 		FObstacle FirstBox;
 		FirstBox.Id = 9;
 		FirstBox.Position = {1, -1, 1};
 		FirstBox.Size = {1, 1, 1};
+
 		FObstacle Box;
 		Box.Id = 4;
 		Box.Position = {1.5, -1, 1};
+
 		const std::vector<FObstacle> Obstacles{FirstBox, Box};
 		FCollisionSolver Solver;
 		Solver.SolveStatic(Body, Obstacles, Settings);
 		Require(ReadParticleVector(Body.GetPositions(), 0) == FVector3D{2, -1, 1} && ReadParticleVector(Body.GetPositions(), 1) == FVector3D{3, 3, 3}, "static projection changed obstacle order, box face tie, or a pinned particle");
+
 		const std::vector<FContact>& Contacts = Solver.GetContacts();
 		Require(Contacts.size() == 5, "boundary/box contacts were skipped or duplicated");
+
 		const std::array<FVector3D, 5> Normals{FVector3D{-1, 0, 0}, FVector3D{0, 1, 0}, FVector3D{0, 0, -1}, FVector3D{1, 0, 0}, FVector3D{1, 0, 0}};
 		const std::array<std::uint32_t, 5> ObstacleIds{0, 0, 0, 9, 4};
+
 		for (std::size_t Index = 0; Index < Contacts.size(); ++Index)
 		{
 			Require(Contacts[Index].BodyA == &Body && Contacts[Index].ParticleIndexA == 0 && Contacts[Index].BodyB == nullptr && Contacts[Index].Normal == Normals[Index] && Contacts[Index].Obstacle == ObstacleIds[Index], "static contact identity or boundary X/Y/Z then obstacle order changed");
 		}
+
 		Solver.BeginSubstep();
 		Solver.SolveStatic(SilentBody, Obstacles, Settings, false);
 		Require(SilentBody.GetPositions() == Body.GetPositions() && Solver.GetContacts().empty(), "silent settle projection changed geometry or recorded contacts");
@@ -700,13 +902,16 @@ namespace
 	{
 		FSettings Settings;
 		Settings.Bounds = 100;
+
 		FObstacle Box;
 		Box.Id = 1;
 		Box.Size = {2, 2, 2};
+
 		FBall Body(0.5, {1.25, 0, 0});
 		FCollisionSolver Solver;
 		Solver.SolveStatic(Body, {Box}, Settings);
 		Require(ReadParticleVector(Body.GetPositions(), 0) == FVector3D{1.5, 0, 0} && Solver.GetContacts().size() == 1 && Solver.GetContacts()[0].Normal == FVector3D{1, 0, 0}, "exterior box projection lost the closest-point normal");
+
 		FObstacle LargerBox;
 		LargerBox.Id = 2;
 		LargerBox.Size = {3, 3, 3};
@@ -726,9 +931,10 @@ namespace
 		FSoftBody* Source = World.AddSoft({20, 0, 0}, {}, {}, {});
 		World.AddSoft(Tetra(), {}, {0, 1, 2, 3}, {});
 		Source->SetParticlePosition(0, {0.1, 0.2, 0.3});
+
 		FCollisionSolver Collision;
 		FSoftContactSolver Solver;
-		FStats Stats;
+		FSoftContactStats Stats;
 		Collision.SolveDynamic(World.GetBodies(), Solver, Stats);
 		Require(Stats.GeneratedContacts > 0 && !Collision.GetContacts().empty(), "soft-only broad phase consumed stale bounds after particle editing");
 	}
@@ -739,6 +945,7 @@ namespace
 		FSoftContactSolver Solver;
 		Solver.Prepare({&Body});
 		Require(Solver.Query(&Body, {0.1, 0.2, 0.3}) == FIndices{0}, "fixture containment failed");
+
 		FContactBodyInfo Snapshot = Solver.GetBodyInfo(&Body).value();
 		const FContactBodyInfo OriginalInfo = Snapshot;
 		const std::array<double, 8> OriginalStats = StatsValues(Solver.GetStats());
@@ -750,35 +957,42 @@ namespace
 		Invalid[3].Margin = -1;
 		Invalid[4].MaxCells = 0;
 		Invalid[5].Margin = std::numeric_limits<double>::infinity();
+
 		for (const FContactOptions& Options : Invalid)
 		{
-			Rejects<std::range_error>([&]
+			Rejects<EErrorCode::OutOfRange>([&]
 			{
-				Solver.Configure(Options);
+				return Solver.Configure(Options);
 			}, "invalid configure succeeded");
+
 			const FContactOptions& Current = Solver.GetOptions();
 			Require(Current.CellSize == OriginalOptions.CellSize && Current.Epsilon == OriginalOptions.Epsilon && Current.Margin == OriginalOptions.Margin && Current.MaxCells == OriginalOptions.MaxCells, "invalid configure changed options");
 			Require(StatsValues(Solver.GetStats()) == OriginalStats, "invalid configure cleared stats");
 			Require(SameInfo(Solver.GetBodyInfo(&Body).value(), OriginalInfo), "invalid configure changed cache");
 		}
+
 		Snapshot.SurfaceIndices[0] = 99;
 		Snapshot.SurfaceVertices[0] = 99;
 		Require(SameInfo(Solver.GetBodyInfo(&Body).value(), OriginalInfo), "diagnostic arrays alias cache");
 		Require(Solver.Query(&Body, {0.1, 0.2, 0.3}) == FIndices{0}, "invalid configure lost usable cache");
+
 		FContactOptions Changed = OriginalOptions;
 		Changed.CellSize = 0.05;
 		Changed.MaxCells = 1;
 		Solver.Configure(Changed);
 		Require(!Solver.GetBodyInfo(&Body), "successful configure retained old registration");
-		Require(StatsValues(Solver.GetStats()) == StatsValues(FStats{}), "successful configure retained stats");
-		Rejects<std::out_of_range>([&]
+		Require(StatsValues(Solver.GetStats()) == StatsValues(FSoftContactStats{}), "successful configure retained stats");
+		Rejects<EErrorCode::OutOfRange>([&]
 		{
-			Solver.Query(&Body, {0.1, 0.2, 0.3});
+			FOperationResult Status;
+			Solver.Query(&Body, {0.1, 0.2, 0.3}, false, &Status);
+
+			return Status;
 		}, "query accepted invalidated cache");
 		Require(Snapshot.SurfaceIndices[0] == 99 && Snapshot.SurfaceVertices[0] == 99 && Snapshot.CellSize == OriginalInfo.CellSize, "configure modified previously returned snapshot");
-		Rejects<std::invalid_argument>([&]
+		Rejects<EErrorCode::InvalidArgument>([&]
 		{
-			Solver.Prepare({&Body, nullptr});
+			return Solver.Prepare({&Body, nullptr});
 		}, "null prepare was accepted");
 		Solver.Prepare({&Body});
 		Require(Solver.Query(&Body, {0.1, 0.2, 0.3}) == FIndices{0}, "prepare did not recover after rejection");
@@ -793,28 +1007,31 @@ namespace
 		FSoftContactSolver Solver;
 		Solver.Prepare({&First});
 		Require(Solver.Query(&First, {0.1, 0.2, 0.3}) == FIndices{0}, "initial cache is unusable");
+
 		const std::array<double, 8> BeforeStats = StatsValues(Solver.GetStats());
 		const FContactBodyInfo BeforeInfo = Solver.GetBodyInfo(&First).value();
-		Rejects<std::invalid_argument>([&]
+		Rejects<EErrorCode::InvalidArgument>([&]
 		{
-			Solver.Prepare({&Second, nullptr});
+			return Solver.Prepare({&Second, nullptr});
 		}, "invalid batch partially prepared a new body");
 		Require(!Solver.GetBodyInfo(&Second), "rejected batch published an earlier body cache");
 		Require(StatsValues(Solver.GetStats()) == BeforeStats, "rejected batch replaced prior diagnostic values");
 		Require(SameInfo(Solver.GetBodyInfo(&First).value(), BeforeInfo), "rejected batch modified prior cache metadata");
 		Require(Solver.Query(&First, {0.1, 0.2, 0.3}) == FIndices{0}, "rejected batch invalidated the prior prepared body");
 		Solver.Prepare({&First, &Second});
+
 		const FContactBodyInfo FirstInfo = Solver.GetBodyInfo(&First).value();
 		const FContactBodyInfo SecondInfo = Solver.GetBodyInfo(&Second).value();
 		Require(Solver.GetStats().HashCells == static_cast<double>(FirstInfo.HashCellCount + SecondInfo.HashCellCount) && Solver.GetStats().OverflowTets == static_cast<double>(FirstInfo.OverflowTets + SecondInfo.OverflowTets), "successful batch diagnostics do not describe both prepared entries");
 		Second.MoveTo({20, 1, 0});
 		Solver.Prepare({&Second});
+
 		const FVector3D Interior = ReadParticleVector(Second.GetPositions(), 0) + FVector3D{0.1, 0.2, 0.3};
 		Require(Solver.Query(&Second, Interior) == FIndices{0}, "warm cache did not refit translated tetrahedron geometry");
 		Require(Solver.Query(&Second, {10.1, 0.2, 0.3}).empty(), "warm cache retained the previous translated geometry");
 		Require(SecondInfo.SurfaceIndices == Solver.GetBodyInfo(&Second)->SurfaceIndices, "refit unexpectedly rebuilt or changed immutable surface topology");
 		Solver.Prepare({});
-		Require(StatsValues(Solver.GetStats()) == StatsValues(FStats{}), "empty preparation retained diagnostics from a previous batch");
+		Require(StatsValues(Solver.GetStats()) == StatsValues(FSoftContactStats{}), "empty preparation retained diagnostics from a previous batch");
 	}
 
 	void ScratchBatchesDoNotLeak()
@@ -824,44 +1041,59 @@ namespace
 		FSoftBody* Source = First.AddSoft({0.1, 0.2, 0.3}, {}, {}, {});
 		FSoftBody* Target = First.AddSoft(Tetra(), {}, {0, 1, 2, 3}, {});
 		First.AddBall(1, {20, 0, 0});
+
 		FSoftBody* NextSource = Second.AddSoft({100.1, 0.2, 0.3}, {}, {}, {});
 		FSoftBody* NextTarget = Second.AddSoft(Tetra(), {}, {0, 1, 2, 3}, {}, {100, 0, 0});
 		Second.AddBall(1, {120, 0, 0});
 		Second.AddBall(1, {121, 0, 0});
+
 		FSoftContactSolver SoftBody;
 		FCollisionSolver Collision;
+
 		for (int Repeat = 0; Repeat < 2; ++Repeat)
 		{
 			Source->Reset();
 			Target->Reset();
 			Collision.BeginSubstep();
-			FStats Stats;
+
+			FSoftContactStats Stats;
 			Collision.SolveDynamic(First.GetBodies(), SoftBody, Stats);
 			Require(!Collision.GetContacts().empty() && Stats.GeneratedContacts > 0, "warm collision was lost");
 		}
+
 		Source->MoveTo({-20, 0, 0});
+
 		const std::vector<std::vector<double>> SeparatedSource = State(*Source);
 		const std::vector<std::vector<double>> SeparatedTarget = State(*Target);
 		Collision.BeginSubstep();
-		FStats SeparatedStats;
+
+		FSoftContactStats SeparatedStats;
 		Collision.SolveDynamic(First.GetBodies(), SoftBody, SeparatedStats);
 		Require(Collision.GetContacts().empty() && SeparatedStats.GeneratedContacts == 0, "noncontact batch replayed old contacts");
 		Require(State(*Source) == SeparatedSource && State(*Target) == SeparatedTarget, "noncontact batch changed positions through stale scratch");
+
 		const std::vector<std::unique_ptr<FBody>> Empty;
 		Collision.BeginSubstep();
-		FStats EmptyStats;
+
+		FSoftContactStats EmptyStats;
 		Collision.SolveDynamic(Empty, SoftBody, EmptyStats);
-		Require(Collision.GetContacts().empty() && StatsValues(EmptyStats) == StatsValues(FStats{}), "empty batch retained old participants");
+		Require(Collision.GetContacts().empty() && StatsValues(EmptyStats) == StatsValues(FSoftContactStats{}), "empty batch retained old participants");
+
 		std::vector<std::vector<std::vector<double>>> OldState;
+
 		for (const std::unique_ptr<FBody>& Item : First.GetBodies())
 		{
 			OldState.push_back(State(*Item));
 		}
+
 		Collision.BeginSubstep();
-		FStats NextStats;
+
+		FSoftContactStats NextStats;
 		Collision.SolveDynamic(Second.GetBodies(), SoftBody, NextStats);
 		Require(NextStats.GeneratedContacts > 0, "replacement batch lost new soft contacts");
+
 		bool bHasNewSoft = false;
+
 		for (const FContact& Contact : Collision.GetContacts())
 		{
 			const auto Belongs = [&](FBody* Body)
@@ -874,7 +1106,9 @@ namespace
 			Require(Belongs(Contact.BodyA) && Belongs(Contact.BodyB), "replacement batch retained old body pointer");
 			bHasNewSoft = bHasNewSoft || (Contact.bSoft && Contact.BodyA == NextSource && Contact.BodyB == NextTarget);
 		}
+
 		Require(bHasNewSoft, "replacement batch did not project its new soft pair");
+
 		for (std::size_t I = 0; I < OldState.size(); ++I)
 		{
 			Require(OldState[I] == State(*First.GetBodies()[I]), "replacement batch modified a previous body");
@@ -885,26 +1119,31 @@ namespace
 	{
 		FPhysicsWorld World;
 		Setup(World);
+
 		FSoftBody* Body = World.AddSoft({0, 0, 0, 5, 0, 0}, {}, {}, {}, {}, {}, {9, 9, 9});
 		FTimeIntegrator::Predict(*Body, 0.1, World.GetSettings());
 		Body->SetParticlePosition(0, {0, 0, 0});
 		Body->SetParticlePosition(1, {5, 0, 0});
+
 		for (std::uint32_t I = 0; I < Body->GetVertexCount(); ++I)
 		{
 			Body->SetParticleVelocity(I, {1, 2, 3});
 			Require(ReadParticleVector(Body->GetPreSolveVelocities(), I) == FVector3D{9, 9, 9} && ReadParticleVector(Body->GetVelocities(), I) == FVector3D{1, 2, 3}, "settle fixture must retain distinct current and predicted velocities");
 		}
+
 		FObstacle Obstacle;
 		Obstacle.Id = 1;
 		Obstacle.Size = {2, 2, 2};
 		World.SetObstacles({Obstacle});
 		World.Settle();
 		Require(Body->GetPositions()[0] == 1 && Body->GetPositions()[3] == 5, "settle fixture displacement changed");
+
 		for (EAxis Axis : AllAxes)
 		{
 			Require(Body->GetVelocities()[ToIndex(Axis)] == 0 && Body->GetPreSolveVelocities()[ToIndex(Axis)] == 0, "displaced particle retained velocity (possible alias snapshot)");
 			Require(Body->GetVelocities()[3 + ToIndex(Axis)] == ToIndex(Axis) + 1 && Body->GetPreSolveVelocities()[3 + ToIndex(Axis)] == 9, "settle cleared velocity of an unmoved particle in the same body");
 		}
+
 		Require(Body->GetPositions() == Body->GetPreviousPositions(), "settle did not synchronize previous state");
 	}
 
@@ -914,15 +1153,19 @@ namespace
 		Require(Body.GetBoundsMin() == FVector3D{-4, -3, -2} && Body.GetBoundsMax() == FVector3D{2, 5, 6}, "asymmetric soft bounds have incorrect extrema");
 		Require(Body.GetCenter() == FVector3D{-1, 1, 2}, "soft center is not the bounding-box midpoint");
 		Require(std::abs(Body.GetRadius() - std::sqrt(41.0)) <= 1E-12, "soft radius does not enclose the farthest vertex from its center");
+
 		const FVector3D* CenterAddress = &Body.GetCenter();
 		const FVector3D* MinAddress = &Body.GetBoundsMin();
 		const FVector3D* MaxAddress = &Body.GetBoundsMax();
+
 		// 더 작은 형상으로 이전 최솟값·최댓값·반지름이 누적되는 오류를 검출합니다.
 		const std::array<FVector3D, 3> Smaller{FVector3D{-1, 0, 1}, FVector3D{1, 2, 3}, FVector3D{0, 1, 1}};
+
 		for (std::size_t I = 0; I < Smaller.size(); ++I)
 		{
 			Body.SetParticlePosition(I, Smaller[I]);
 		}
+
 		const std::vector<std::vector<double>> Before = State(Body);
 		Body.UpdateBounds();
 		Require(Body.GetBoundsMin() == FVector3D{-1, 0, 1} && Body.GetBoundsMax() == FVector3D{1, 2, 3}, "soft refit retained extrema from a previous shape");
@@ -946,6 +1189,7 @@ namespace
 		Ball.MoveTo({8, -1, 2});
 		VerifyBounds({8, -1, 2});
 		Require(ReadParticleVector(Ball.GetVelocities(), 0) == InitialVelocity && ReadParticleVector(Ball.GetPreSolveVelocities(), 0) == InitialVelocity, "moving ball changed its velocity state");
+
 		const FVector3D EditedPosition{-8, 6, 5};
 		Ball.SetParticlePosition(0, EditedPosition);
 		Ball.UpdateBounds();
@@ -957,11 +1201,14 @@ namespace
 		Require(ReadParticleVector(Ball.GetVelocities(), 0) == FVector3D{} && ReadParticleVector(Ball.GetPreSolveVelocities(), 0) == FVector3D{}, "ball reset restored initial velocity instead of clearing it");
 
 		FSoftBody SoftBody({0, 0, 0, 1, 2, 3}, {}, {}, {}, {}, {}, InitialVelocity);
+
 		for (std::uint32_t I = 0; I < SoftBody.GetVertexCount(); ++I)
 		{
 			Require(ReadParticleVector(SoftBody.GetVelocities(), I) == InitialVelocity && ReadParticleVector(SoftBody.GetPreSolveVelocities(), I) == FVector3D{}, "soft initial predicted velocity was incorrectly unified with ball initialization");
 		}
+
 		SoftBody.Reset();
+
 		for (std::uint32_t I = 0; I < SoftBody.GetVertexCount(); ++I)
 		{
 			Require(ReadParticleVector(SoftBody.GetVelocities(), I) == FVector3D{} && ReadParticleVector(SoftBody.GetPreSolveVelocities(), I) == FVector3D{}, "soft reset restored initial velocity instead of clearing it");
@@ -972,11 +1219,13 @@ namespace
 	{
 		FPhysicsWorld World;
 		Setup(World);
+
 		FSoftBody* Body = World.AddSoft(Tetra(), {0, 1}, {0, 1, 2, 3}, {}, {}, {}, {1, 2, 3});
 		Body->SetParticlePosition(1, {2, 0, 0});
 		World.Step(0.1);
 		Body->SetDragTarget(FVector3D{7, 8, 9});
 		Require(Body->GetEdgeLambdas()[0] != 0 && Body->GetVolumeLambdas()[0] != 0, "setter fixture must contain accumulated multipliers");
+
 		const std::vector<std::vector<double>> Before = State(*Body);
 		const std::vector<double> Rest = Body->GetRestPositions();
 		const FStorageIdentity OriginalStorage = GetStorageIdentity(*Body);
@@ -989,58 +1238,64 @@ namespace
 			Require(std::array<FVector3D, 3>{Body->GetCenter(), Body->GetBoundsMin(), Body->GetBoundsMax()} == CachedBounds && Body->GetRadius() == CachedRadius, "particle setter unexpectedly refreshed cached bounds");
 			Require(GetStorageIdentity(*Body) == OriginalStorage, "particle setter resized or replaced storage");
 		};
+
 		const auto VerifyRejection = [&]
 		{
 			Require(State(*Body) == Before, "rejected setter partially modified particle state");
 			VerifyMetadata();
 		};
+
 		const double Nan = std::numeric_limits<double>::quiet_NaN();
 		const double Infinity = std::numeric_limits<double>::infinity();
+
 		for (const std::size_t Index : {Body->GetVertexCount(), std::numeric_limits<std::size_t>::max()})
 		{
 			// 값과 인덱스가 모두 잘못되어도 인덱스 오류를 먼저 보고해야 합니다.
-			Rejects<std::out_of_range>([&]
+			Rejects<EErrorCode::OutOfRange>([&]
 			{
-				Body->SetParticlePosition(Index, {Nan, Infinity, -Infinity});
+				return Body->SetParticlePosition(Index, {Nan, Infinity, -Infinity});
 			}, "position setter did not validate index before values");
 			VerifyRejection();
-			Rejects<std::out_of_range>([&]
+			Rejects<EErrorCode::OutOfRange>([&]
 			{
-				Body->SetParticleVelocity(Index, {Nan, Infinity, -Infinity});
+				return Body->SetParticleVelocity(Index, {Nan, Infinity, -Infinity});
 			}, "velocity setter did not validate index before values");
 			VerifyRejection();
-			Rejects<std::out_of_range>([&]
+			Rejects<EErrorCode::OutOfRange>([&]
 			{
-				Body->SetParticleInverseMass(Index, Nan);
+				return Body->SetParticleInverseMass(Index, Nan);
 			}, "inverse-mass setter did not validate index before value");
 			VerifyRejection();
 		}
+
 		for (const double Invalid : {Nan, Infinity, -Infinity})
 		{
 			for (EAxis Axis : AllAxes)
 			{
 				FVector3D Value{91, 92, 93};
 				Value[Axis] = Invalid;
-				Rejects<std::invalid_argument>([&]
+				Rejects<EErrorCode::InvalidArgument>([&]
 				{
-					Body->SetParticlePosition(1, Value);
+					return Body->SetParticlePosition(1, Value);
 				}, "position setter accepted a nonfinite component");
 				VerifyRejection();
-				Rejects<std::invalid_argument>([&]
+				Rejects<EErrorCode::InvalidArgument>([&]
 				{
-					Body->SetParticleVelocity(1, Value);
+					return Body->SetParticleVelocity(1, Value);
 				}, "velocity setter accepted a nonfinite component");
 				VerifyRejection();
 			}
 		}
+
 		for (const double Invalid : {-1.0, Nan, Infinity, -Infinity})
 		{
-			Rejects<std::invalid_argument>([&]
+			Rejects<EErrorCode::InvalidArgument>([&]
 			{
-				Body->SetParticleInverseMass(1, Invalid);
+				return Body->SetParticleInverseMass(1, Invalid);
 			}, "inverse-mass setter accepted an invalid value");
 			VerifyRejection();
 		}
+
 		std::vector<std::vector<double>> Expected = Before;
 		Body->SetParticlePosition(1, {20, 30, 40});
 		Expected[0][3] = 20;
@@ -1054,6 +1309,7 @@ namespace
 		Expected[2][5] = -6;
 		Require(State(*Body) == Expected, "velocity setter changed predicted velocity or another buffer");
 		VerifyMetadata();
+
 		for (const double ValidMass : {0.0, 2.5})
 		{
 			Body->SetParticleInverseMass(1, ValidMass);
@@ -1061,6 +1317,7 @@ namespace
 			Require(State(*Body) == Expected, "inverse-mass setter changed velocity or another particle");
 			VerifyMetadata();
 		}
+
 		Body->UpdateBounds();
 		Require(Body->GetBoundsMax() == FVector3D{20, 30, 40}, "explicit bounds refresh missed setter position");
 		Require(State(*Body) == Expected && GetStorageIdentity(*Body) == OriginalStorage && Body->GetRestPositions() == Rest && Body->GetDragTarget() == OriginalDrag, "bounds refresh changed unrelated state after setter edits");
@@ -1089,6 +1346,7 @@ namespace
 			{{0.5, 0.5, 1}, {0.5, 0.25, 0.25}, {0.5, 0.5, 0}, 1},
 			{{1, 0, 0}, {0.5, 0.5, 0}, {1, 0, 0}, 0},
 		}};
+
 		for (const FCase& Case : Cases)
 		{
 			const FTriangleClosestPoint Hit = FindClosestPointOnTriangle(Case.Point, A, B, C);
@@ -1106,11 +1364,13 @@ namespace
 			Settings.bXpbd = bXpbd;
 			Settings.EdgeCompliance = 0;
 			Settings.PbdStiffness = 1;
+
 			FSoftBody Body({0, 0, 0, 2, 0, 0}, {0, 1}, {}, {}, {}, {0, 2});
 			Body.SetParticlePosition(1, {});
 			FConstraintSolver::SolveEdges(Body, 0.1, Settings);
 			Require(ReadParticleVector(Body.GetPositions(), 0) == FVector3D{} && ReadParticleVector(Body.GetPositions(), 1) == FVector3D{2, 0, 0}, "collapsed edge must recover its rest direction without moving the pinned end");
 			Require(Body.GetEdgeLambdas()[0] == 1, "collapsed edge must accumulate the inverse-mass-weighted correction");
+
 			FSoftBody ZeroLength({1, 2, 3, 1, 2, 3}, {0, 1}, {}, {});
 			const std::vector<double> Before = ZeroLength.GetPositions();
 			FConstraintSolver::SolveEdges(ZeroLength, 0.1, Settings);
@@ -1123,14 +1383,17 @@ namespace
 		FSettings Settings;
 		Settings.Gravity = {100, 200, 300};
 		Settings.Damping = 10;
+
 		FSoftBody Body({0, 0, 0, 2, 0, 0}, {}, {}, {}, {}, {0, 2}, {9, 8, 7});
 		Body.SetDragTarget(FVector3D{3, 2, -2});
+
 		const std::vector<double> Before = Body.GetPositions();
 		FTimeIntegrator::Predict(Body, 0.5, Settings);
 		Require(Body.GetPreviousPositions() == Before, "prediction must snapshot positions before drag integration");
 		Require(ReadParticleVector(Body.GetPositions(), 0) == FVector3D{} && ReadParticleVector(Body.GetVelocities(), 0) == FVector3D{}, "pinned particle must stay fixed and lose its initial velocity");
 		Require(ReadParticleVector(Body.GetVelocities(), 1) == FVector3D{0.8, 0.8, -0.8} && ReadParticleVector(Body.GetPositions(), 1) == FVector3D{2.4, 0.4, -0.4}, "soft drag must replace gravity/damping with the center-to-target velocity");
 		Require(Body.GetPreSolveVelocities() == Body.GetVelocities(), "predicted velocity must be recorded after integrating every particle");
+
 		FBall Ball(1, {1, 2, 3});
 		Ball.SetDragTarget(FVector3D{5, 6, 7});
 		FTimeIntegrator::Predict(Ball, 0.5, Settings);
@@ -1142,8 +1405,10 @@ namespace
 		const FTriangleClosestPoint Collinear = FindClosestPointOnTriangle({0.5, 1, 0}, {0, 0, 0}, {1, 0, 0}, {2, 0, 0});
 		Require(Collinear.Weights == std::array<double, 3>{0.5, 0.5, 0}, "equal-distance degenerate segments must retain the first AB segment");
 		Require(Collinear.Position == FVector3D{0.5, 0, 0} && Collinear.DistanceSquared == 1, "collinear triangle must project onto its boundary segments");
+
 		const FTriangleClosestPoint Repeated = FindClosestPointOnTriangle({1, 1, 0}, {0, 0, 0}, {0, 0, 0}, {2, 0, 0});
 		Require(Repeated.Weights == std::array<double, 3>{0, 0.5, 0.5}, "zero length AB segment lost BC projection");
+
 		const FTriangleClosestPoint Collapsed = FindClosestPointOnTriangle({1, 2, 3}, {}, {}, {});
 		Require(Collapsed.Weights == std::array<double, 3>{1, 0, 0} && Collapsed.Position == FVector3D{} && Collapsed.DistanceSquared == 14, "collapsed triangle must choose the first vertex");
 	}
@@ -1168,12 +1433,15 @@ namespace
 	void VectorValuesPreserveAxesAndNumericalContracts()
 	{
 		FVector3D Vector{};
+
 		for (EAxis Axis : AllAxes)
 		{
 			Vector[Axis] = ToIndex(Axis) + 1;
 		}
+
 		Require(Vector.X == 1 && Vector.Y == 2 && Vector.Z == 3,
 			"typed axes must address independent XYZ components");
+
 		const FVector3D Snapshot = Vector;
 		Vector[EAxis::Y] = 9;
 		Require(Snapshot == FVector3D{1, 2, 3}, "vector copies must own independent values");
@@ -1193,10 +1461,12 @@ namespace
 		std::vector<double> Values{1, 2, 3, 4, 5, 6};
 		const double* Storage = Values.data();
 		const FVector3D Snapshot = ReadParticleVector(Values, 1);
+
 		AddParticleVector(Values, 1, {-1, 2, -3});
 		Require(Values.data() == Storage && Values == std::vector<double>{1, 2, 3, 3, 7, 3},
 			"vector mutation must retain packed storage and unrelated particles");
 		Require(Snapshot == FVector3D{4, 5, 6}, "packed vector reads must return owned values");
+
 		const std::vector<double> Vertices{0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1};
 		Require(CalculateSignedTetrahedronVolume(Vertices) == 1.0 / 6 &&
 				CalculateSignedTetrahedronVolume(Vertices, 0, 2, 1, 3) == -1.0 / 6,
@@ -1214,8 +1484,11 @@ int main()
 		{"closest triangle covers seven Voronoi regions and an edge boundary", ClosestTriangleCoversVoronoiRegions},
 		{"closest triangle preserves degenerate segment tie order", ClosestTrianglePreservesDegenerateTieOrder},
 		{"closest triangle preserves scale and winding invariants", ClosestTriangleIsScaleAndWindingIndependent},
-		{"tetrahedron index preserves dense sparse overflow order and rebuild", TetrahedronIndexPreservesCandidateOrderAndRebuild},
+		{"tetrahedron query preserves dense sparse overflow order and rebuild", TetrahedronQueryPreservesCandidateOrderAndRebuild},
+		{"tetrahedron query switches storage and recovers degenerate geometry", TetrahedronQueryRebuildSwitchesStorageAndRecoversGeometry},
 		{"surface BVH preserves tie order and independent values", SurfaceBvhPreservesTieOrderAndIndependentValues},
+		{"surface BVH prunes and refits reordered geometry", SurfaceBvhPrunesAndRefitsReorderedGeometry},
+		{"surface BVH refits collapsed leaf", SurfaceBvhRefitsCollapsedLeaf},
 		{"empty vectors and observing reference versus owning snapshot", EmptyVectorsAndReferenceSnapshots},
 		{"seven storage buffers survive step move reset and world growth", StableStorage},
 		{"zero and rejected timestep preserve progressed state", ZeroStepPreservesProgressedState},
@@ -1238,20 +1511,14 @@ int main()
 		{"body initial velocity and legacy ball bounds survive move and reset", BodyInitialVelocityAndBallBounds},
 		{"particle setters validate atomically and change only their target", ParticleSettersValidateAndPreserveUnrelatedState},
 	};
-	std::size_t Failed = 0;
+
 	for (const std::pair<std::string, std::function<void()>>& Test : Tests)
 	{
-		try
-		{
-			Test.second();
-			std::cout << "PASS " << Test.first << '\n';
-		}
-		catch (const std::exception& Error)
-		{
-			++Failed;
-			std::cerr << "FAIL " << Test.first << ": " << Error.what() << '\n';
-		}
+		Test.second();
+		std::cout << "PASS " << Test.first << '\n';
 	}
-	std::cout << Tests.size() - Failed << '/' << Tests.size() << " refactoring checks passed\n";
-	return Failed == 0 ? 0 : 1;
+
+	std::cout << Tests.size() << '/' << Tests.size() << " refactoring checks passed\n";
+
+	return 0;
 }

@@ -1,5 +1,8 @@
 # PBD 프로젝트 구조와 계약
 
+몸체별 제약 계산의 스레드 소유권·완료 대기·Wasm 실행 조건은
+[제약 병렬화 설계](parallel-constraints.md)를 따릅니다.
+
 공통 설계·코딩 규칙은 [project-conventions.md](project-conventions.md)를 따릅니다.
 이 문서는 PBD의 실제 모듈과 예외를 기록합니다.
 
@@ -56,7 +59,7 @@ BFCache에 보존되는 pagehide에서는 모듈을 해제하지 않습니다.
 
 장애물은 축 정렬 Box이며 `size`의 세 성분으로 전체 길이를 지정합니다. 구형 장애물과 `radius` 입력은 거부합니다.
 설정은 `configure`, 장애물은 `addObstacle`/`updateObstacle`/`removeObstacle`,
-입자·물체 이동은 검증된 명령을 호출합니다. 잘못된 설정·형상·소유자는 예외로 거부하고
+입자·물체 이동은 검증된 명령을 호출합니다. C++는 잘못된 설정·형상·소유자를 실패 상태로 반환하고 JS 어댑터가 오류로 변환합니다.
 검증 성공 뒤 JS mirror를 반영합니다. 기존 mutable obstacle mirror는 과거 소비자 호환용이며
 현재 app은 명령만 사용합니다. Wasm 배열 조회는 호출 직후 재취득하고 owner dispose 이후
 body 접근은 오류입니다. app이 오류 배너와 공통 cleanup을 담당합니다.
@@ -83,11 +86,16 @@ ID 소진은 신규 등록 오류이고 기존 owner는 유지됩니다. 종류�
 바뀌면 새 native solver를 candidate로 준비한 뒤 성공 시 교체합니다. 같은 owner는 캐시를
 재사용합니다. 각 성공한 준비에 JS batch generation을 부여하므로 native solver가 바뀌어
 native generation 값이 반복되어도 이전 contact 투영은 거부합니다. 새 owner 준비 실패는
-기존 batch를 보존하며, 같은 owner refit의 내부 할당 실패는 native의 basic guarantee입니다.
+기존 batch를 보존합니다. 동적 할당 자원 소진은 native 종료 정책을 따릅니다.
 native 준비는 새 토폴로지의 셀 인덱스·BVH를 후보 캐시에서 완성한 뒤 등록하며, 기존 항목은
 `RefitBodySpatialCache`에서 두 공간 표현을 같은 위치로 갱신합니다. 널 몸체는 변경 전에 거부하고
 batch 통계는 모든 요청 body가 준비된 뒤 교체합니다. 기존 entry refit의 전체 rollback을
 보장하지 않으며 raw native cache의 이전 등록 body 수명은 caller가 유지합니다.
+
+사면체 포함 검색은 `FTetrahedronPointQuery`가 조율합니다. 현재 역기저·퇴화·경계 판정은
+`FTetrahedronGeometry`, 조밀·희소·초과 후보의 등록과 순회는 `FTetrahedronCellGrid`가
+소유합니다. 몸체나 위치 배열을 보관하지 않으며 위치 변경 뒤 `Rebuild()`가 필요합니다.
+상세 책임과 보존 계약은 [사면체 점 질의](tetrahedron-point-query.md)를 따릅니다.
 
 근거: [physics.js](../src/simulation/physics.js), [Bindings.cpp](../native/bindings/Bindings.cpp),
 [app.js](../src/app.js), [ExperimentController](../src/experiment-controller.mjs), [회귀 검사](../tests/unit/wasm-adapter.test.mjs).

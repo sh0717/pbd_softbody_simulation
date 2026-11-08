@@ -21,7 +21,7 @@ native/
 | --- | --- | --- | --- |
 | `core/` | Vector3D, SimulationConfig, WorldBounds | MathUtils, Settings | Vector2, Config, Kernels |
 | `simulation/` | BirdFlock, Goal, Predator, SimulationState, NeighborSearch, SpatialGrid, KdTree | Body, Ball, SoftBody, PhysicsWorld, ConstraintSolver, TimeIntegrator | Simulation, Neighbors, Fields, Integration, Boundary |
-| `collision/` | Obstacle, SphereObstacle, BoxObstacle, ObstacleSet | CollisionSolver, SoftContactSolver, TetrahedronSpatialIndex, SurfaceBvh, SurfaceTopology, TriangleGeometry, BumperSystem | Collision |
+| `collision/` | Obstacle, SphereObstacle, BoxObstacle, ObstacleSet | CollisionSolver, SoftContactSolver, TetrahedronPointQuery, TetrahedronGeometry, TetrahedronCellGrid, SurfaceBvh, SurfaceTopology, TriangleGeometry, BumperSystem | Collision |
 | `bindings/Bindings.cpp` | 공개 C ABI 함수 | Embind 등록 | Embind 등록 |
 
 기존 `bodies/`, `world/`, `solvers/`, `spatial/`의 계산 코드는 `simulation/`으로 이동했습니다.

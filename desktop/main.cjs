@@ -23,18 +23,24 @@ app.setName(config.productName);
 async function registerAssets() {
   const assets = new Map();
   const listing = require('./assets.json');
+
   for (const [file, type] of Object.entries(listing))
     assets.set(file, { body: await readFile(path.join(__dirname, file.slice(1))), type });
+
   protocol.handle(config.scheme, (request) => {
     const url = new URL(request.url);
     const asset = assets.get(url.pathname);
+
     if (url.host !== 'lab' || request.method !== 'GET' || !asset)
       return new Response('Not found', { status: 404 });
+
     return new Response(asset.body, {
       headers: {
         'Content-Type': asset.type,
         'Content-Security-Policy': config.csp,
         'X-Content-Type-Options': 'nosniff',
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Embedder-Policy': 'require-corp',
       },
     });
   });
@@ -46,12 +52,15 @@ async function start() {
     app.setPath('userData', path.join(smokeOutput, 'profile'));
     app.setPath('sessionData', path.join(smokeOutput, 'profile'));
   }
+
   await app.whenReady();
   app.setAppUserModelId(config.appId);
   Menu.setApplicationMenu(null);
   await registerAssets();
+
   const errors = [],
     blockedRequests = [];
+
   session.defaultSession.webRequest.onBeforeRequest(
     { urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*', 'file://*/*'] },
     (details, callback) => {
@@ -59,8 +68,10 @@ async function start() {
       callback({ cancel: true });
     },
   );
+
   const mayFullscreen = (contents, permission) =>
     permission === 'fullscreen' && contents?.getURL() === entryUrl;
+
   session.defaultSession.setPermissionCheckHandler(mayFullscreen);
   session.defaultSession.setPermissionRequestHandler((contents, permission, callback) =>
     callback(mayFullscreen(contents, permission)),
@@ -69,6 +80,7 @@ async function start() {
     if (!config.allowBlobDownloads || !item.getURL().startsWith(`blob:${origin}/`))
       event.preventDefault();
   });
+
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 1000,
@@ -99,6 +111,7 @@ async function start() {
   mainWindow.webContents.on('preload-error', (_event, _file, error) => errors.push(error.message));
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     errors.push(`Renderer exited: ${details.reason}`);
+
     if (!smokeOutput && details.reason !== 'clean-exit') {
       dialog.showErrorBox(
         config.productName,
@@ -109,6 +122,7 @@ async function start() {
   });
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown' || input.isAutoRepeat) return;
+
     if (input.key === 'F11') {
       mainWindow.setFullScreen(!mainWindow.isFullScreen());
       event.preventDefault();
@@ -117,13 +131,17 @@ async function start() {
       event.preventDefault();
     }
   });
+
   if (!smokeOutput) mainWindow.once('ready-to-show', () => mainWindow.show());
+
   await mainWindow.loadURL(entryUrl);
+
   if (smokeOutput) {
     const passed = await require('./smoke.cjs').runSmokeTest(mainWindow, smokeOutput, {
       errors,
       blockedRequests,
     });
+
     app.exit(passed ? 0 : 1);
   }
 }
@@ -132,7 +150,9 @@ if (!smokeOutput && !app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', () => {
     if (!mainWindow) return;
+
     if (mainWindow.isMinimized()) mainWindow.restore();
+
     mainWindow.show();
     mainWindow.focus();
   });
@@ -145,6 +165,7 @@ else {
         JSON.stringify({ passed: false, error: error.stack }, null, 2),
       );
     } else dialog.showErrorBox(`${config.productName} 시작 오류`, error.message);
+
     app.exit(1);
   });
 }

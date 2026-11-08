@@ -9,10 +9,12 @@ import { chromium } from 'playwright';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const artifacts = path.join(root, 'artifacts');
 const port = Number(process.env.PBD_TEST_PORT ?? 4174);
+
 assert.ok(
   Number.isInteger(port) && port > 0 && port <= 65535,
   'PBD_TEST_PORT must be a valid port',
 );
+
 const url = `http://127.0.0.1:${port}/pbd_model.html`;
 // CI에서는 GPU 드라이버 대신 Chromium의 CPU 렌더러를 명시적으로 사용합니다.
 const launchArgs =
@@ -36,6 +38,7 @@ const failedResponses = [];
 
 async function readPageState() {
   if (!page || page.isClosed()) return null;
+
   return page
     .evaluate(() => {
       const gl = window.softLab?.renderer?.getContext();
@@ -71,6 +74,7 @@ try {
     const onError = (error) => finish(error);
     const onExit = (code) =>
       finish(new Error(`Server exited before readiness (${code}): ${serverOutput}`));
+
     server.on('error', onError);
     server.on('exit', onExit);
     server.stderr.on('data', (chunk) => {
@@ -78,6 +82,7 @@ try {
     });
     server.stdout.on('data', (chunk) => {
       serverOutput += chunk.toString();
+
       if (serverOutput.includes('PBD_SERVER_READY')) finish();
     });
   });
@@ -111,37 +116,50 @@ try {
     undefined,
     { timeout: 60000 },
   );
+
   const initialState = await readPageState();
+
   assert.equal(
     await page.locator('#error-banner').isHidden(),
     true,
     `initialization must succeed: ${JSON.stringify({ initialState, errors })}`,
   );
+
   await page.screenshot({ path: path.join(artifacts, 'browser-desktop.png') });
   await page.addScriptTag({
     content: await readFile(path.join(root, 'tests/browser/checks.js'), 'utf8'),
   });
+
   const checks = await page.evaluate(() => window.runSoftLabChecks());
+
   assert.equal(checks.passed, 26, 'run the complete UI regression suite');
+
   const disposed = await page.evaluate(() => {
     const app = window.softLab;
     const body = app.world.bodies[0];
+
     app.dispose();
     app.dispose();
+
     let expiredBody = false;
+
     try {
       body.positions;
     } catch (error) {
       expiredBody = /disposed/i.test(error.message);
     }
+
     const running = app.running;
+
     document.getElementById('run-button').click();
+
     return {
       canvasCount: document.querySelectorAll('#viewport canvas').length,
       expiredBody,
       eventsRemoved: app.running === running,
     };
   });
+
   assert.deepEqual(disposed, { canvasCount: 0, expiredBody: true, eventsRemoved: true });
 
   await page.reload({ waitUntil: 'networkidle' });
@@ -149,6 +167,7 @@ try {
   expectedConsoleError = 'PBD_TEST_INJECTED_STEP_FAILURE';
   await page.evaluate((message) => {
     const app = window.softLab;
+
     window.expiredBodyForTest = app.world.bodies[0];
     app.world.step = () => {
       throw new Error(message);
@@ -157,10 +176,12 @@ try {
   }, expectedConsoleError);
   await page.locator('#error-banner').waitFor({ state: 'visible' });
   await page.waitForFunction(() => document.querySelectorAll('#viewport canvas').length === 0);
+
   assert.equal(
     await page.evaluate(() => {
       try {
         window.expiredBodyForTest.positions;
+
         return false;
       } catch (error) {
         return /disposed/i.test(error.message);
@@ -181,9 +202,12 @@ try {
     Object.defineProperty(window, 'PBDPhysics', {
       configurable: true,
       get: () => physics,
+
       set(api) {
         physics = api;
+
         const World = api.PhysicsWorld;
+
         api.PhysicsWorld = class extends World {
           constructor(...args) {
             super(...args);
@@ -192,14 +216,18 @@ try {
         };
       },
     });
+
     const getElementById = Document.prototype.getElementById;
+
     Document.prototype.getElementById = function (id) {
       if (id === 'run-button' && window.startupWorldForTest) throw new Error(message);
+
       return getElementById.call(this, id);
     };
   }, expectedConsoleError);
   await page.reload({ waitUntil: 'networkidle' });
   await page.locator('#error-banner').waitFor({ state: 'visible' });
+
   assert.equal(
     await page.locator('#viewport canvas').count(),
     0,
@@ -209,6 +237,7 @@ try {
     await page.evaluate(() => {
       try {
         window.startupWorldForTest.step();
+
         return false;
       } catch (error) {
         return /disposed/i.test(error.message);
@@ -241,6 +270,7 @@ try {
       'partial initialization failure disposes renderer and native world',
     ],
   };
+
   await writeFile(
     path.join(artifacts, 'browser-results.json'),
     `${JSON.stringify(result, null, 2)}\n`,
@@ -258,18 +288,22 @@ try {
     failedResponses,
     serverOutput,
   };
+
   console.error(JSON.stringify(diagnostics, null, 2));
+
   try {
     await mkdir(artifacts, { recursive: true });
     await writeFile(
       path.join(artifacts, 'browser-failure.json'),
       `${JSON.stringify(diagnostics, null, 2)}\n`,
     );
+
     if (page && !page.isClosed())
       await page.screenshot({ path: path.join(artifacts, 'browser-failure.png'), timeout: 5000 });
   } catch (diagnosticError) {
     console.error(`Browser diagnostics could not be saved: ${diagnosticError.message}`);
   }
+
   throw error;
 } finally {
   try {
@@ -277,6 +311,7 @@ try {
   } finally {
     if (server.pid && server.exitCode === null && server.signalCode === null) {
       const exited = once(server, 'exit');
+
       server.kill();
       await exited;
     }

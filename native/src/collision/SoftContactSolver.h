@@ -1,7 +1,7 @@
 #pragma once
 #include "collision/Contact.h"
 #include "collision/SurfaceBvh.h"
-#include "collision/TetrahedronSpatialIndex.h"
+#include "collision/TetrahedronPointQuery.h"
 #include "simulation/SoftBody.h"
 #include <cstddef>
 #include <optional>
@@ -23,7 +23,7 @@ struct FContactOptions
 	int MaxCells = 512;
 
 	/** 셀 크기·상대 허용 오차·여유 거리·최대 셀 수의 유효 범위를 검증합니다. */
-	void Validate() const;
+	FOperationResult Validate() const;
 };
 
 // 배열을 소유하는 진단 스냅샷이며 이후 Prepare/Configure와 독립적입니다.
@@ -60,14 +60,14 @@ class FSoftContactSolver
 {
 public:
 	/** 먼저 검증합니다. 성공하면 캐시와 기존 접촉을 무효화합니다. */
-	void Configure(const FContactOptions& InOptions);
+	FOperationResult Configure(const FContactOptions& InOptions);
 
 	const FContactOptions& GetOptions() const noexcept
 	{
 		return Options;
 	}
 
-	const FStats& GetStats() const noexcept
+	const FSoftContactStats& GetStats() const noexcept
 	{
 		return Stats;
 	}
@@ -83,18 +83,27 @@ public:
 	 * 널 입력은 캐시·진단 변경 전에 거부합니다. 새 몸체 캐시는 공간 셀 인덱스·BVH 완성 뒤 등록하고
 	 * 일괄 통계는 모든 준비 성공 뒤 교체합니다. 토폴로지는 변경하지 않으며 Configure가
 	 * 전체 등록을 지웁니다.
-	 * @note 기존 몸체의 갱신 중 할당이 실패하면 기본 예외 보장만 제공합니다. 질의 전에 필요한 몸체 전체를
-	 * 다시 Prepare해야 하며 기존에 등록한 몸체의 수명도 유지합니다.
+	 * @note 동적 할당 자원 소진은 종료 정책을 따릅니다. 검증 실패는 상태값으로 반환합니다.
+	 * 기존에 등록한 몸체는 캐시를 사용하는 동안 살아 있어야 합니다.
 	 */
-	void Prepare(const std::vector<FSoftBody*>& Bodies);
+	FOperationResult Prepare(const std::vector<FSoftBody*>& Bodies);
+
+	/** 마지막 Configure 이후 Prepare에 성공하여 공간 캐시를 가진 몸체인지 반환합니다. */
+	bool IsPrepared(const FSoftBody* Body) const noexcept
+	{
+		return BodyCaches.find(Body) != BodyCaches.end();
+	}
 
 	/**
 	 * 준비된 몸체에서 점을 포함하는 사면체 인덱스를 독립 배열로 반환합니다.
 	 * @note bFirst는 최소 인덱스가 아닌 결정적 순회의 첫 일치에서 중단합니다.
 	 */
-	FIndices Query(FSoftBody* Body, FVector3D QueryPoint, bool bFirst = false);
+	FIndices Query(FSoftBody* Body, FVector3D QueryPoint, bool bFirst = false, FOperationResult* OutResult = nullptr);
 
-	/** 위치를 바꾸지 않고 양방향 접촉을 추가합니다. 모든 몸체 쌍의 접촉 수집 후 투영해야 합니다. */
+	/**
+	 * 위치를 바꾸지 않고 양방향 접촉을 추가합니다. 모든 몸체 쌍의 접촉 수집 후 투영해야 합니다.
+	 * @pre 두 몸체가 IsPrepared를 만족해야 하며 위반하면 std::abort로 종료합니다.
+	 */
 	void Generate(FSoftBody* SourceBody, FSoftBody* TargetBody, std::vector<FContact>& InOutContacts);
 
 	/**
@@ -108,7 +117,7 @@ private:
 	struct FBodySpatialCache
 	{
 		// 현재 사면체의 역기저·셀 후보를 소유하며 위치 변경 뒤 재구축합니다.
-		FTetrahedronSpatialIndex TetrahedronIndex;
+		FTetrahedronPointQuery TetrahedronQuery;
 
 		// 외부 표면·BVH·질의 스택을 소유하며 같은 위치 상태로 경계를 갱신합니다.
 		FSurfaceBvh SurfaceBvh;
@@ -118,15 +127,10 @@ private:
 	FContactOptions Options;
 
 	// 최근 Prepare 이후 질의·접촉 생성·투영 진단이며 일괄 준비 성공 시 교체합니다.
-	FStats Stats;
+	FSoftContactStats Stats;
 
 	// 몸체 주소별 두 공간 컴포넌트를 소유합니다. 키는 몸체를 소유하지 않습니다.
 	std::unordered_map<const FSoftBody*, FBodySpatialCache> BodyCaches;
-
-	FBodySpatialCache CreateBodySpatialCache(FSoftBody* Body);
-
-	/** 기존 캐시는 제자리 갱신하며 신규 캐시는 두 공간 컴포넌트 준비 완료 뒤 등록합니다. */
-	FBodySpatialCache& PrepareBody(FSoftBody& Body);
 
 	void RefitBodySpatialCache(FBodySpatialCache& InOutBodyCache, FSoftBody& Body);
 

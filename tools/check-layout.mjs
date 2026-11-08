@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+
 for (const relative of [
   'src/index.html',
   'src/styles/app.css',
@@ -28,9 +29,12 @@ for (const relative of [
   'CMakePresets.json',
 ])
   assert.ok(existsSync(path.join(root, relative)), `Common layout missing: ${relative}`);
+
 const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+
 for (const relative of ['tools/npm-runner.mjs', 'tools/run.mjs'])
   assert.ok(existsSync(path.join(root, relative)), `Missing script runner: ${relative}`);
+
 for (const [name, command] of Object.entries({
   build: 'node tools/build.mjs',
   start: 'node tools/serve.mjs',
@@ -46,11 +50,17 @@ for (const [name, command] of Object.entries({
   'release:exe': 'node tools/release-desktop.mjs',
 }))
   assert.equal(pkg.scripts[name], command, `Common build command differs: ${name}`);
+
 const presets = JSON.parse(await readFile(path.join(root, 'CMakePresets.json'), 'utf8'));
+
 assert.equal(presets.configurePresets[0].binaryDir, '${sourceDir}/build/native');
+
 for (const group of ['buildPresets', 'testPresets'])
   for (const configuration of ['debug', 'release'])
     assert.ok(presets[group].some(({ name }) => name === `native-${configuration}`));
+
 const source = await readFile(path.join(root, 'src/index.html'), 'utf8');
+
 assert.ok(!/\b(?:src|href)=["']https?:/i.test(source), 'HTML must not load assets from a CDN');
+
 console.log('Common source/output layout and build command contracts passed.');

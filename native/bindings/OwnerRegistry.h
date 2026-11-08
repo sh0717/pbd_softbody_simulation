@@ -1,8 +1,8 @@
 #pragma once
+#include "core/OperationResult.h"
 #include <cstdint>
 #include <limits>
 #include <memory>
-#include <stdexcept>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -33,38 +33,47 @@ public:
 
 	// 검증/할당 실패 시 전달받은 소유 객체는 RAII로 해제하고 기존 등록은 보존합니다.
 	template <typename T>
-	FHandle RegisterOwner(std::unique_ptr<T> Object)
+	FHandle RegisterOwner(std::unique_ptr<T> Object, FOperationResult* OutResult = nullptr)
 	{
 		if (!Object)
 		{
-			throw std::invalid_argument("Cannot register a null native owner");
+			PublishOperationResult({EErrorCode::InvalidArgument, "Cannot register a null native owner"}, OutResult);
+			return 0;
 		}
+
 		if (NextHandle > MaximumHandle)
 		{
-			throw std::overflow_error("Native owner handle range exhausted");
+			PublishOperationResult({EErrorCode::ResourceExhausted, "Native owner handle range exhausted"}, OutResult);
+			return 0;
 		}
+
 		const FHandle Handle = static_cast<FHandle>(NextHandle);
 		Objects.emplace(Handle, std::move(Object));
 		++NextHandle;
+		PublishOperationResult({}, OutResult);
 		return Handle;
 	}
 
 	template <typename T>
 	/**
 	 * 토큰의 소유 객체 종류와 생존을 확인한 뒤 비소유 포인터를 반환합니다.
-	 * @note 만료되었거나 다른 타입의 토큰이면 예외로 거부합니다.
+	 * @note 만료되었거나 다른 타입의 토큰이면 nullptr와 실패 상태를 반환합니다.
 	 */
-	T* Get(FHandle Handle) const
+	T* Get(FHandle Handle, FOperationResult* OutResult = nullptr) const
 	{
 		const auto Found = Objects.find(Handle);
+
 		if (Found != Objects.end())
 		{
 			if (const std::unique_ptr<T>* Object = std::get_if<std::unique_ptr<T>>(&Found->second))
 			{
+				PublishOperationResult({}, OutResult);
 				return Object->get();
 			}
 		}
-		throw std::invalid_argument("Expired native owner");
+
+		PublishOperationResult({EErrorCode::InvalidArgument, "Expired native owner"}, OutResult);
+		return nullptr;
 	}
 
 	// 만료/다른 종류의 토큰은 무시하므로 중복 해제가 새 소유 객체를 파괴하지 않습니다.
@@ -72,6 +81,7 @@ public:
 	void Destroy(FHandle Handle)
 	{
 		const auto Found = Objects.find(Handle);
+
 		if (Found != Objects.end() && std::get_if<std::unique_ptr<T>>(&Found->second))
 		{
 			Objects.erase(Found);

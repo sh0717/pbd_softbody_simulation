@@ -11,6 +11,7 @@
     "test": "node tools/test.mjs",
     "test:native": "node tools/native.mjs test",
     "test:browser": "node tests/browser/browser.mjs",
+    "test:parallel": "node tests/browser/parallel.mjs",
     "check:format": "node tools/style.mjs",
     "format": "node tools/style.mjs --write",
     "check:structure": "node tools/check-structure.mjs",

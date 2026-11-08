@@ -40,14 +40,18 @@ export class ExperimentController {
       'restoreCamera',
       'setWireframe',
     ];
+
     this.actions = Object.freeze(
       Object.fromEntries(names.map((name) => [name, this[name].bind(this)])),
     );
+
     const controller = this;
+
     this.selection = Object.freeze({
       get body() {
         return controller.selectedBody;
       },
+
       get obstacle() {
         return controller.selectedObstacle;
       },
@@ -59,6 +63,7 @@ export class ExperimentController {
 
   assertAlive() {
     if (this.disposed) throw new Error('실험이 종료되었습니다.');
+
     if (this.failed) throw new Error('실험 오류로 실행이 중단되었습니다.');
   }
 
@@ -70,6 +75,7 @@ export class ExperimentController {
     } catch (error) {
       this.running = false;
       this.failed = true;
+
       try {
         this.onFatal(error);
       } finally {
@@ -80,6 +86,7 @@ export class ExperimentController {
 
   syncBodies() {
     this.assertAlive();
+
     for (const body of this.world.bodies) this.view.syncBody(body);
   }
 
@@ -90,36 +97,48 @@ export class ExperimentController {
 
   addSoft(offset) {
     this.assertAlive();
+
     if (this.world.softBodies.length >= MAX_BODIES_PER_KIND) return;
+
     const body = this.world.addSoftBody(
       this.bunnyData,
       offset || [(Math.random() - 0.5) * 10, 1, (Math.random() - 0.5) * 8],
     );
+
     this.finishCommittedChange(() => {
       this.view.addBody(
         body,
         SOFT_COLORS[(this.world.softBodies.length - 1) % SOFT_COLORS.length],
         this.ui.isWireframe(),
       );
+
       if (this.world.obstacles.length) this.settle();
+
       this.ui.updateCounts();
     });
+
     return body;
   }
 
   addBall(position) {
     this.assertAlive();
+
     if (this.world.balls.length >= MAX_BODIES_PER_KIND) return;
+
     const body = this.world.addBall(
       1,
       position || [(Math.random() - 0.5) * 10, 3, (Math.random() - 0.5) * 8],
       [0.4, 0, 0.15],
     );
+
     this.finishCommittedChange(() => {
       this.view.addBody(body, 0x668c99, false);
+
       if (this.world.obstacles.length) this.settle();
+
       this.ui.updateCounts();
     });
+
     return body;
   }
 
@@ -128,6 +147,7 @@ export class ExperimentController {
       this.selectedBody.dragTarget = null;
       this.view.selectBody(this.selectedBody, false);
     }
+
     this.selectedBody = null;
   }
 
@@ -147,15 +167,19 @@ export class ExperimentController {
 
   setDragTarget(value) {
     this.assertAlive();
+
     if (this.selectedBody) this.selectedBody.dragTarget = value;
   }
 
   addObstacle(shape = 'box', options = {}) {
     this.assertAlive();
+
     if (shape !== 'box' || (options.shape !== undefined && options.shape !== 'box')) {
       throw new TypeError('장애물은 Box만 사용할 수 있습니다.');
     }
+
     if (this.world.obstacles.length >= MAX_OBSTACLES) return;
+
     const obstacle = this.world.addObstacle({
       identifier: this.nextObstacleId,
       shape,
@@ -165,6 +189,7 @@ export class ExperimentController {
       bumperStrength: 4,
       ...options,
     });
+
     this.nextObstacleId++;
     this.finishCommittedChange(() => {
       this.view.addObstacle(obstacle);
@@ -173,17 +198,23 @@ export class ExperimentController {
       this.ui.refreshObstacles();
       this.settle();
     });
+
     return obstacle;
   }
 
   editObstacle(name, value) {
     this.assertAlive();
+
     if (!this.selectedObstacle) return;
+
     const options = {};
+
     if (!/^(position|size)-[xyz]$/.test(name)) {
       throw new TypeError('장애물의 위치와 박스 크기만 편집할 수 있습니다.');
     }
+
     const [field, axis] = name.split('-');
+
     options[field] = Array.from(this.selectedObstacle[field]);
     options[field]['xyz'.indexOf(axis)] = value;
     this.world.updateObstacle(this.selectedObstacle, options);
@@ -224,7 +255,9 @@ export class ExperimentController {
     this.world.configure({ mode });
     this.finishCommittedChange(() => {
       this.ui.updateMode();
+
       for (const body of this.world.softBodies) body.resetLambdas();
+
       this.ui.updateMaterial();
     });
   }
@@ -260,18 +293,22 @@ export class ExperimentController {
     this.assertAlive();
     this.world.configure({ substeps: value });
   }
+
   setIterations(value) {
     this.assertAlive();
     this.world.configure({ solverIterations: value });
   }
+
   setGravity(enabled) {
     this.assertAlive();
     this.world.configure({ gravity: [0, enabled ? -9.81 : 0, 0] });
   }
+
   restoreCamera() {
     this.assertAlive();
     this.view.restoreCamera();
   }
+
   setWireframe(enabled) {
     this.assertAlive();
     this.view.setWireframe(enabled);
@@ -279,21 +316,27 @@ export class ExperimentController {
 
   setBumper(value) {
     this.assertAlive();
+
     if (!this.selectedObstacle) return;
+
     this.world.updateObstacle(this.selectedObstacle, { bumper: value });
     this.finishCommittedChange(() => this.ui.syncObstacle());
   }
 
   setBumperStrength(value) {
     this.assertAlive();
+
     if (!this.selectedObstacle) return;
+
     this.world.updateObstacle(this.selectedObstacle, { bumperStrength: value });
     this.finishCommittedChange(() => this.ui.syncObstacle());
   }
 
   removeObstacle() {
     this.assertAlive();
+
     if (!this.selectedObstacle) return;
+
     this.picking.endDrag();
     this.world.removeObstacle(this.selectedObstacle);
     this.finishCommittedChange(() => {
@@ -305,6 +348,7 @@ export class ExperimentController {
 
   dispose() {
     if (this.disposed) return;
+
     this.disposed = true;
     this.running = false;
     this.selectedBody = null;

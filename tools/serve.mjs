@@ -18,12 +18,17 @@ const types = {
   '.txt': 'text/plain; charset=utf-8',
 };
 const server = http.createServer(async (request, response) => {
+  response.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  response.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+
   try {
     if (!['GET', 'HEAD'].includes(request.method)) {
       response.writeHead(405);
       response.end();
+
       return;
     }
+
     const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
     const servedPath =
       pathname === '/'
@@ -33,6 +38,7 @@ const server = http.createServer(async (request, response) => {
           : pathname;
     const target = path.resolve(root, `.${servedPath}`);
     const relative = path.relative(root, target);
+
     if (
       relative.startsWith('..') ||
       path.isAbsolute(relative) ||
@@ -42,19 +48,25 @@ const server = http.createServer(async (request, response) => {
     ) {
       response.writeHead(403);
       response.end('Forbidden');
+
       return;
     }
+
     const file = await stat(target);
+
     if (!file.isFile()) {
       response.writeHead(404);
       response.end('Not found');
+
       return;
     }
+
     response.writeHead(200, {
       'Content-Type': types[path.extname(target)] || 'application/octet-stream',
       'Content-Length': file.size,
       'Cache-Control': 'no-store',
     });
+
     if (request.method === 'HEAD') response.end();
     else
       createReadStream(target)

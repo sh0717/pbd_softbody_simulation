@@ -16,8 +16,10 @@ void FTimeIntegrator::Predict(FBody& InOutBody, const double SubstepSeconds, con
 	std::copy(InOutBody.GetPositions().begin(), InOutBody.GetPositions().end(), InOutBody.PreviousPositions.begin());
 
 	InOutBody.BeginSubstep();
+
 	// 중심과 목표 사이 변위를 드래그 속도로 바꾸는 1/초 계수입니다. 연체와 구체의 기존 값을 구분합니다.
 	const double DragGainPerSecond = InOutBody.IsSoft() ? SoftDragGainPerSecond : BallDragGainPerSecond;
+
 	// 이번 서브스텝에서 중력 반영 후 속도에 곱할 무차원 감쇠 배율입니다.
 	const double VelocityAttenuation = std::exp(-Settings.Damping * SubstepSeconds);
 
@@ -33,18 +35,22 @@ void FTimeIntegrator::PredictParticle(FBody& InOutBody, const std::uint32_t Part
 {
 	// 현재 입자의 XYZ 첫 성분 오프셋입니다. 고정 입자는 이 세 성분의 속도만 0으로 만듭니다.
 	const std::size_t ParticleOffset = std::size_t(ParticleIndex) * 3;
+
 	if (!InOutBody.GetInverseMass()[ParticleIndex])
 	{
 		for (EAxis Axis : AllAxes)
 		{
 			InOutBody.Velocities[ParticleOffset + ToIndex(Axis)] = 0;
 		}
+
 		return;
 	}
+
 	for (EAxis Axis : AllAxes)
 	{
 		// 입자 번호와 축을 합쳐 위치·속도 배열의 같은 성분을 가리키는 인덱스입니다.
 		const std::size_t ComponentIndex = ParticleOffset + ToIndex(Axis);
+
 		// 중심 읽기와 축별 저장 시점을 기존 순서에 유지합니다.
 		if (InOutBody.GetDragTarget())
 		{
@@ -54,6 +60,7 @@ void FTimeIntegrator::PredictParticle(FBody& InOutBody, const std::uint32_t Part
 		{
 			InOutBody.Velocities[ComponentIndex] = (InOutBody.GetVelocities()[ComponentIndex] + Settings.Gravity[Axis] * SubstepSeconds) * VelocityAttenuation;
 		}
+
 		InOutBody.Positions[ComponentIndex] += SubstepSeconds * InOutBody.GetVelocities()[ComponentIndex];
 	}
 }

@@ -24,12 +24,17 @@ const server = createServer(async (request, response) => {
     const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
     const file = path.resolve(root, `.${pathname}`);
     const relative = path.relative(root, file);
+
     if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Outside project');
+
     const body = await readFile(file);
+
     response.writeHead(200, {
       'Content-Type': types[path.extname(file)] || 'application/octet-stream',
       'Content-Security-Policy': config.csp,
       'Cache-Control': 'no-store',
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
     });
     response.end(body);
   } catch {
@@ -37,6 +42,7 @@ const server = createServer(async (request, response) => {
   }
 });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
 const base = `http://127.0.0.1:${server.address().port}`;
 const errors = [],
   external = [],
@@ -47,16 +53,20 @@ let browser;
 // CI의 WebGL 검사는 하드웨어 GPU 없이도 같은 렌더링 경로를 실행합니다.
 const launchArgs =
   process.env.PBD_TEST_SOFTWARE_WEBGL === '1' ? ['--use-gl=angle', '--use-angle=swiftshader'] : [];
+
 try {
   browser = await chromium.launch({ channel: 'chrome', headless: true, args: launchArgs });
+
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   await context.route('**/*', async (route) => {
     const url = route.request().url();
+
     if (/^https?:/.test(url) && !url.startsWith(`${base}/`)) {
       external.push(url);
       await route.abort();
     } else await route.continue();
   });
+
   const entries = [
     'dist/index.html',
     ...(config.scheme === 'pbd'
@@ -66,10 +76,12 @@ try {
         : ['SPH-Fluid-Lab.html']),
   ];
   const targets = [];
+
   for (const entry of entries) {
     targets.push({ entry: `http: ${entry}`, url: `${base}/${entry}` });
     targets.push({ entry: `file: ${entry}`, url: pathToFileURL(path.join(root, entry)).href });
   }
+
   for (const { entry, url } of targets) {
     const page = await context.newPage();
     page.on('pageerror', (error) => errors.push(error.message));
@@ -93,6 +105,7 @@ try {
       config.scheme,
       { timeout: 60000 },
     );
+
     if (config.scheme === 'pbd') {
       assert.equal(
         await page.locator('#error-banner').isHidden(),
@@ -100,12 +113,38 @@ try {
         `${entry}: initialization`,
       );
     }
+
     assert.ok((await page.locator('canvas').count()) > 0, `${entry}: WebGL canvas`);
+
     if (config.scheme === 'pbd') {
-      await page.evaluate(() => {
+      const execution = await page.evaluate(() => {
         window.softLab.setRunning(false);
-        window.softLab.world.step();
+
+        const world = window.softLab.world;
+        const data = {
+          verts: [0, 0, 0, 1, 0, 0],
+          tetEdgeIds: [0, 1],
+          tetIds: [],
+          tetSurfaceTriIds: [],
+        };
+
+        while (world.softBodies.length < 2) world.addSoftBody(data, [3, 3, 3]);
+
+        world.step();
+
+        return {
+          workers: world.constraintWorkerCount,
+          isolated: crossOriginIsolated,
+          expected: Math.max(0, Math.min(3, navigator.hardwareConcurrency - 1)),
+        };
       });
+
+      assert.equal(execution.isolated, !url.startsWith('file:'), `${entry}: isolation`);
+      assert.equal(
+        execution.workers,
+        execution.isolated ? execution.expected : 0,
+        `${entry}: selected runtime`,
+      );
       assert.ok(
         await page.evaluate(() =>
           window.softLab.world.bodies.every((body) =>
@@ -115,20 +154,26 @@ try {
       );
     } else if (config.scheme === 'sph') {
       const before = await page.evaluate(() => window.sphApp.getState().snapshot.step_index);
+
       await page.evaluate(() => window.sphApp.advanceSteps(1));
+
       assert.equal(
         await page.evaluate(() => window.sphApp.getState().snapshot.step_index),
         before + 1,
       );
     } else assert.equal(await page.locator('#viewport').getAttribute('data-backend'), 'cpp17-wasm');
+
     const environment = url.startsWith('file:') ? 'browser file origin' : 'desktop CSP';
+
     checks.push(`${entry}: initialized and exercised under ${environment}`);
     await page.close();
   }
+
   assert.deepEqual(errors, []);
   assert.deepEqual(external, []);
   assert.deepEqual(failedRequests, []);
   assert.deepEqual(wasmRequests, [], 'the embedded core must initialize without a Wasm request');
+
   await mkdir(path.join(root, 'artifacts'), { recursive: true });
   await writeFile(
     path.join(root, 'artifacts/distribution-results.json'),

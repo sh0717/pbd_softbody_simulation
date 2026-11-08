@@ -25,10 +25,12 @@ for (const kind of ['body', 'obstacle']) {
         }
       },
     };
+
     const create =
       kind === 'body'
         ? () => scene.addBody({ type: 'ball', radius: 1 }, 0, false)
         : () => scene.addObstacle({ shape: 'box' });
+
     assert.throws(create, (error) => error === failure);
     assert.deepEqual(calls, ['geometry']);
   });
@@ -42,11 +44,13 @@ test('body synchronization failure removes its mesh and attempts both resource r
     SphereGeometry: class {
       dispose() {
         calls.push('geometry');
+
         throw new Error('geometry cleanup failed');
       }
     },
     MeshStandardMaterial: class {
       color = { convertSRGBToLinear() {} };
+
       dispose() {
         calls.push('material');
       }
@@ -64,12 +68,15 @@ test('body synchronization failure removes its mesh and attempts both resource r
     add() {
       calls.push('add');
     },
+
     remove() {
       calls.push('remove');
     },
   };
   scene.bodyViews = new Map();
+
   const body = { type: 'ball', radius: 1, positions: [0, 0, 0] };
+
   assert.throws(
     () => scene.addBody(body, 0, false),
     (error) => error === original,

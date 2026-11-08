@@ -20,7 +20,7 @@ native/
     collision/  Contact.h, CollisionSolver.h/.cpp,
                 SoftContactSolver.h/.cpp, BumperSystem.h/.cpp
                 SurfaceTopology.h/.cpp, TriangleGeometry.h/.cpp,
-                TetrahedronSpatialIndex.h/.cpp, SurfaceBvh.h/.cpp
+                TetrahedronPointQuery.h/.cpp, TetrahedronGeometry.h/.cpp, TetrahedronCellGrid.h/.cpp, SurfaceBvh.h/.cpp
   bindings/     Bindings.cpp, OwnerRegistry.h, ContactSession.h
   sources.txt
 ```
@@ -32,8 +32,10 @@ native/
 | `FBall final : FBody` | 단일 입자 구형 물체 | 반경과 중심 |
 | `FTimeIntegrator` | 중력·감쇠·드래그에 따른 예측, 보정 후 속도 복원 | 없음 |
 | `FConstraintSolver` | PBD/XPBD 엣지·signed volume 제약 투영 | 없음. λ는 FSoftBody에 저장 |
-| `FTetrahedronSpatialIndex` | 조밀·희소 셀 후보와 사면체 포함 검사 | 사면체 역기저·경계, 셀 목록, 초과 목록 |
-| `FSurfaceBvh` | 표면 BVH 구축·경계 갱신·최근접점 탐색 | 표면 인덱스·노드·정렬 순서·순회 스택 |
+| `FTetrahedronPointQuery` | 셀 후보를 받아 사면체 포함 판정·결과·진단 조율 | 사면체 기하 배열, 셀 그리드 |
+| `FTetrahedronGeometry` | 사면체 하나의 퇴화·경계·무게중심 좌표 계산 | 현재 역기저·경계 |
+| `FTetrahedronCellGrid` | 조밀·희소·초과 후보 등록과 결정적 순회 | 셀 목록, 초과 목록 |
+| `FSurfaceBvh` | 기준 위치로 트리 구축 → 현재 경계 갱신 → 최근접점 탐색 | 원본 `Topology`, 삼각형 순열 `TriangleOrder`, `Nodes`, 검색 스택 `PendingNodeIndices` |
 | `FSoftContactSolver` | 공간 자료구조 준비, 접촉 생성·투영·통계 조율 | 몸체별 두 공간 컴포넌트 |
 | `FCollisionSolver` | 구·벽·장애물 접촉, 반발 응답, 편집 후 접촉 안정화 | 현재 서브스텝의 접촉 목록 |
 | `FBumperSystem` | 능동 범퍼의 진입·쿨다운·발사 이벤트 | 객체–장애물 쌍별 이력·이벤트·그룹/정점 임시 저장소 |
@@ -52,7 +54,9 @@ classDiagram
   FPhysicsWorld *-- FSoftContactSolver
   FPhysicsWorld *-- FBumperSystem
   FCollisionSolver --> FSoftContactSolver : 국소 접촉
-  FSoftContactSolver *-- FTetrahedronSpatialIndex
+  FSoftContactSolver *-- FTetrahedronPointQuery
+  FTetrahedronPointQuery *-- FTetrahedronGeometry
+  FTetrahedronPointQuery *-- FTetrahedronCellGrid
   FSoftContactSolver *-- FSurfaceBvh
   TOwnerRegistry *-- FContactSession : unique_ptr
   FContactSession *-- FSoftContactSolver
@@ -66,7 +70,7 @@ classDiagram
 저장소와 형상 상태는 모두 private이며, 파생 클래스는 크기 변경 권한을 갖지 않습니다.
 `FSoftBody`와 `FBall`은 계산한 경계 결과를 protected `PublishBounds()`로 전달합니다.
 `FPhysicsWorld`의 상태와 `FSoftContactSolver`의 공간 캐시는 비공개입니다.
-`FSettings`, `FContactOptions`, `FContactBodyInfo`, `FObstacle`, `FContact`, `FHit`, `FStats`는
+`FSettings`, `FContactOptions`, `FContactBodyInfo`, `FObstacle`, `FContact`, `FHit`, `FSoftContactStats`는
 설정·결과 전달용 구조체입니다. `FContactOptions`는 검증 후 `Configure()`로 적용하고,
 통계는 const 참조로 조회합니다. `FContactBodyInfo`는 캐시 내부 타입을 노출하지 않는 소유형 진단 스냅샷입니다.
 코어에는 Three.js·DOM·Emscripten 타입이 없습니다. `bindings/`만 브라우저 런타임에 의존합니다.
@@ -105,7 +109,10 @@ Wasm 메모리 증가 시 이전 뷰가 분리되므로 매번 getter로 다시 
 렌더러는 결과를 Three.js의 `Float32Array` 버퍼에 한 번 복사합니다.
 명시적 `dispose()`와 GC 정리 경로를 제공하며, 해제한 world의 Body 접근은 오류로 처리합니다.
 독립 `SoftContactSolver` 어댑터는 참조하는 Body의 소유자를 유지하고, 오래된 접촉 배치의 재사용을 거부합니다.
-C++ 예외는 JavaScript의 `TypeError`·`RangeError` 등으로 변환하고 네이티브 예외 저장소를 해제합니다.
+C++는 예외를 사용하지 않습니다. 외부 입력 검증은 `FOperationResult`를 반환하고 검증된 내부 계산은 `void`로 실행합니다. 바인딩은 RAII 정리가 끝난 뒤 정상 반환합니다.
+JS 어댑터가 `takeError()`의 상태를 소비하여 `TypeError`·`RangeError` 등으로 변환합니다.
+직접 raw Wasm export를 호출하는 소비자도 각 호출 후 `takeError()`를 확인합니다.
+상세 오류·자원 소진 정책은 [예외 미사용 계약](no-exceptions.md)을 따릅니다.
 
 world/solver 토큰은 주소를 사용하지 않습니다. `TOwnerRegistry`가 공통 ID 공간에서 단조 증가
 토큰을 발급하고 종류를 검사하므로 해제 후 주소 재사용이나 다른 종류의 토큰으로 새 owner를
@@ -113,7 +120,7 @@ world/solver 토큰은 주소를 사용하지 않습니다. `TOwnerRegistry`가 
 
 `FContactSession`은 기존 독립 solver의 Core/Pending/Generation을 함께 소유합니다.
 `Prepare()`는 Core 준비에 성공한 뒤 Pending을 비우고 세대를 진행합니다. 실패하면 Pending과
-세대는 유지하고, Core 내부 refit 실패는 기존 basic guarantee를 따릅니다. `Generate()`는
+세대는 유지하고, 동적 할당 자원 소진은 종료 정책을 따릅니다. `Generate()`는
 추가한 접촉 범위와 세대만 반환하며, 직렬화는 `GetContact()`의 const 참조를 사용합니다.
 `Project()`가 세대·인덱스를 확인한 뒤 투영합니다. 여러 접촉 중 후속 입력이 실패해도 앞선
 투영을 롤백하지 않는 기존 순서를 유지합니다. 세션은 몸체를 소유하지 않으며 JS 어댑터가
@@ -132,7 +139,7 @@ raw `FSoftContactSolver`의 body 관찰자는 owner가 아닙니다. 몸체를 �
 재사용하지 않습니다. JS의 독립 solver는 owner 객체 identity가 바뀔 때 candidate native solver를
 준비하여 성공 후 교체하고, JS batch generation으로 이전 contact를 거부합니다.
 같은 owner 집합의 위치 변경은 기존 캐시 refit을 사용합니다.
-native `PrepareBody`는 새 entry의 표면/BVH 토폴로지와 셀 인덱스/BVH 위치 refit을 완료한 뒤
+native `Prepare`는 새 entry의 표면/BVH 토폴로지와 셀 인덱스/BVH 위치 refit을 완료한 뒤
 등록합니다. `RefitBodySpatialCache`는 포함 검사와 최근접 표면이 같은 위치를 보게 두 공간 표현을 함께
 갱신합니다. `Prepare`의 batch 진단은 모든 body 준비 뒤 발행합니다. 기존 entry의 refit 할당
 실패에서는 basic guarantee를 유지하며 raw body 등록 수명은 caller가 관리합니다. 상세 계약은 [코드 독해 가이드](code-reading.md)를 확인합니다.
