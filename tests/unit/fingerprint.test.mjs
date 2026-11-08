@@ -4,80 +4,12 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
-  CRITERIA,
-  evaluateScore,
   runtimeFingerprint,
   sourceFingerprint,
-} from '../../tools/quality.mjs';
+  verifyExecution,
+} from '../../tools/fingerprint.mjs';
 
-function report() {
-  return {
-    schemaVersion: 1,
-    reviewer: 'independent-verification',
-    reviewedAt: '2026-10-26T00:00:00Z',
-    criteria: CRITERIA.map((id) => ({
-      id,
-      score: 5,
-      reason: 'Reviewed',
-      evidence: [{ path: 'README.md', line: 1 }],
-    })),
-    blockers: [],
-  };
-}
-
-test('quality gate rejects missing or duplicated criteria and unevidenced scores', () => {
-  for (const mutate of [
-    (value) => value.criteria.pop(),
-    (value) => {
-      value.criteria[0].id = 'R2';
-    },
-    (value) => {
-      value.criteria[0].evidence = [];
-    },
-    (value) => {
-      value.criteria[0].evidence[0].path = '../README.md';
-    },
-  ]) {
-    const value = report();
-    mutate(value);
-    assert.throws(() => evaluateScore(value));
-  }
-});
-
-test('quality gate rejects high totals with a weak group, criterion, or blocking defect', () => {
-  for (const mutate of [
-    (value) =>
-      value.criteria
-        .filter(({ id }) => id.startsWith('P'))
-        .forEach((item) => {
-          item.score = 3;
-        }),
-    (value) => {
-      value.criteria[0].score = 2;
-    },
-    (value) => {
-      value.blockers = ['Unresolved failure'];
-    },
-    (value) =>
-      value.criteria.forEach((item) => {
-        item.score = 4;
-      }),
-  ]) {
-    const value = report();
-    mutate(value);
-    assert.throws(() => evaluateScore(value));
-  }
-  assert.equal(evaluateScore(report()).total, 100);
-  const belowTarget = report();
-  belowTarget.criteria[0].score = 4;
-  belowTarget.criteria[1].score = 4;
-  belowTarget.criteria[2].score = 4;
-  assert.throws(() => evaluateScore(belowTarget), /below 98/);
-  belowTarget.criteria[2].score = 5;
-  assert.equal(evaluateScore(belowTarget).total, 98);
-});
-
-test('review fingerprint changes with source edits but survives line endings and generated outputs', async () => {
+test('source fingerprint changes with source edits but survives line endings and generated outputs', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'portfolio-quality-'));
   try {
     await mkdir(path.join(root, 'src/simulation/generated'), { recursive: true });
@@ -164,6 +96,46 @@ test('runtime fingerprint detects nested output creation, edits and deletion in 
       await rm(output);
       assert.deepEqual(await runtimeFingerprint(root), original);
     }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('execution verification rejects stale source, changed runtime and incomplete or failed gates', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'pbd-execution-'));
+  try {
+    await mkdir(path.join(root, 'artifacts'));
+    await mkdir(path.join(root, 'src'));
+    await mkdir(path.join(root, 'dist'));
+    await writeFile(path.join(root, 'src/app.js'), 'source');
+    await writeFile(path.join(root, 'dist/app.js'), 'runtime');
+    const execution = {
+      schemaVersion: 1,
+      sourceSha256: (await sourceFingerprint(root)).sha256,
+      runtimeSha256: (await runtimeFingerprint(root)).sha256,
+      checks: ['build', 'check', 'native:Debug', 'native:Release', 'browser'].map((name) => ({
+        name,
+        exitCode: 0,
+      })),
+    };
+    const record = path.join(root, 'artifacts/validation.json');
+    await writeFile(record, JSON.stringify(execution));
+    assert.equal((await verifyExecution(root)).gates, 5);
+    for (const [change, pattern] of [
+      [{ sourceSha256: 'stale' }, /stale/],
+      [{ runtimeSha256: 'changed' }, /runtime changed/],
+      [{ checks: execution.checks.slice(0, -1) }, /Expected values/],
+      [{ checks: execution.checks.map((check) => ({ ...check, exitCode: 1 })) }, /gate failed/],
+    ]) {
+      await writeFile(record, JSON.stringify({ ...execution, ...change }));
+      await assert.rejects(() => verifyExecution(root), pattern);
+    }
+    await writeFile(record, JSON.stringify(execution));
+    await writeFile(path.join(root, 'src/app.js'), 'edited source');
+    await assert.rejects(() => verifyExecution(root), /stale/);
+    await writeFile(path.join(root, 'src/app.js'), 'source');
+    await writeFile(path.join(root, 'dist/app.js'), 'edited runtime');
+    await assert.rejects(() => verifyExecution(root), /runtime changed/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

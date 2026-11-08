@@ -166,6 +166,6 @@ app과 scene은 개별 해제가 실패해도 나머지 정리를 계속 시도�
 canvas·native owner·리스너 정리를 검사합니다.
 
 검사를 통과한 입력과 장면의 동작을 증명하며 모든 GPU 드라이버·내부 할당 실패·고속 충돌 경로까지
-증명하지는 않습니다. 실행한 명령과 범위는 [독립 리뷰](portfolio-review.md)를 확인합니다.
+증명하지는 않습니다. `npm run verify`는 전체 실행 결과를 `artifacts/validation.json`에 기록합니다.
 
-검토 기준과 소스·실행 지문의 관계는 [품질 기준](quality-standard.md)을 확인합니다.
+`npm run check:execution`으로 검사 당시의 소스·배포물 해시와 모든 검사 종료 코드를 대조합니다.

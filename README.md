@@ -37,11 +37,12 @@ SDK는 `EMSDK` 또는 `.tools/emsdk-main`에서 찾습니다.
 | `npm.cmd run test:native:release` | 네이티브 Release 빌드와 CTest                                           |
 | `npm.cmd run test:browser`        | Python·설치된 Chrome을 사용하는 UI·수명 검사                            |
 | `npm.cmd run test:distribution`   | 배포 HTML의 HTTP·직접 파일 실행 검사                                    |
-| `npm.cmd run check:quality`       | 독립 리뷰 기록과 현재 공개 소스 지문 확인                               |
-| `npm.cmd run verify:portfolio`    | Wasm·웹 빌드, check, native Debug/Release, 브라우저 검사                |
+| `npm.cmd run check:execution`       | 전체 검사 결과와 현재 소스·배포물 해시 확인                               |
+| `npm.cmd run verify`    | Wasm·웹 빌드, check, native Debug/Release, 브라우저 검사                |
 
-VS Code 설정과 디버깅은 [개발 환경](docs/vscode-development.md), 실행 결과와 미실행 범위는
-[독립 리뷰](docs/portfolio-review.md)를 확인합니다. 위 명령 목록 자체는 검사 통과 기록이 아닙니다.
+검사 결과와 오류 로그는 GitHub Actions와 로컬 `artifacts/`에서 확인합니다.
+`check:execution`은 `verify`가 생성한 검사 결과의 소스·배포물 해시와 종료 코드를 확인합니다.
+CI 브라우저 검사는 `PBD_TEST_SOFTWARE_WEBGL=1`로 CPU 렌더러를 사용합니다.
 
 ## 코드 읽기
 
@@ -53,13 +54,12 @@ src/app.js → experiment-controller → simulation/physics.js
 
 | 문서                                                                               | 내용                         |
 | ---------------------------------------------------------------------------------- | ---------------------------- |
-| [코드 독해](docs/code-reading.md) · [리뷰 순서](docs/code-review-guide.md)         | 실행 흐름, 수식, 관련 검사   |
+| [코드 독해](docs/code-reading.md)         | 실행 흐름, 수식, 관련 검사   |
 | [아키텍처](docs/architecture.md) · [C++ 구조](docs/cpp-architecture.md)            | 책임, 소유권, 대여 수명      |
 | [XPBD의 람다](docs/xpbd-lambda.md)                                                 | 누적 승수와 제약 보정        |
 | [C++ 표준](docs/cpp-coding-standard.md) · [공통 규약](docs/project-conventions.md) | 이름, 주석, 서식과 실패 계약 |
 | [프로젝트 배치](docs/project-layout.md) · [native 배치](docs/native-layout.md)     | 원본과 빌드 경로             |
-| [품질 기준](docs/quality-standard.md)                                              | 독립 판정과 소스·실행 지문   |
-| [공개 파일](docs/github-upload.md) · [EXE 배포](docs/desktop.md)                   | 저장소 포함 범위와 배포 절차 |
+| [EXE 배포](docs/desktop.md)                   | 저장소 포함 범위와 배포 절차 |
 
 `native/src/`는 수학·상태·해법·충돌을, `native/bindings/`는 Emscripten 경계를 담당합니다.
 `src/`는 앱·시뮬레이션 연결·렌더링·입력을, `tests/`와 `tools/`는 검사·빌드·개발 명령을 담습니다.

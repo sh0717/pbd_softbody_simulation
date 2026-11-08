@@ -61,8 +61,7 @@ PBD/SPH의 Embind 로더·메모리 성장·Worker 소유권은 각각 유지합
 Windows 네이티브 프리셋은 Visual Studio 18 2026 x64와 CMake 4.2 이상을 사용합니다.
 CMake가 PATH에 없으면 VS Installer로 설치 위치를 조회합니다. `CMAKE`로 실행 파일을 지정할 수 있습니다.
 Python은 PBD/SPH의 C++/Wasm 재컴파일에 사용하며 일반 웹 빌드·실행에서는 필요하지 않습니다.
-VS Code의 `Lab: Build web`, `Lab: Build native Debug/Release`, `Lab: Test native Debug/Release`,
-`Lab: Release EXE` 작업을 공통으로 제공합니다. 기존 디버깅 작업도 보존합니다.
+편집기 설정은 로컬에서 관리하며, 공개 빌드·검사는 위 npm 명령으로 실행합니다.
 
 `tools/check-layout.mjs`는 현재 구조의 경로와 명령 계약을 검사합니다.
 상위 과제 모음의 배포 명령은 공유 빌드·서버·검사·Electron 코드와 CMakePresets의 동일성도 검사합니다.

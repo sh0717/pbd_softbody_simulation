@@ -14,6 +14,9 @@ assert.ok(
   'PBD_TEST_PORT must be a valid port',
 );
 const url = `http://127.0.0.1:${port}/pbd_model.html`;
+// CI에서는 GPU 드라이버 대신 Chromium의 CPU 렌더러를 명시적으로 사용합니다.
+const launchArgs =
+  process.env.PBD_TEST_SOFTWARE_WEBGL === '1' ? ['--use-gl=angle', '--use-angle=swiftshader'] : [];
 
 // serve.py verifies project identity before reusing an existing listener.
 // Keep shell disabled so this process owns the Python server it starts.
@@ -24,11 +27,34 @@ const server = spawn(process.env.PYTHON ?? 'python', ['tools/serve.py', '--port'
 });
 let serverOutput = '';
 let browser;
+let page;
 const errors = [];
 let expectedConsoleError;
 const expectedErrors = [];
 const failedRequests = [];
 const failedResponses = [];
+
+async function readPageState() {
+  if (!page || page.isClosed()) return null;
+  return page
+    .evaluate(() => {
+      const gl = window.softLab?.renderer?.getContext();
+      const debugInfo = gl?.getExtension('WEBGL_debug_renderer_info');
+      return {
+        ready: Boolean(window.softLab),
+        errorBanner: document.getElementById('error-banner')?.textContent,
+        canvasCount: document.querySelectorAll('#viewport canvas').length,
+        webgl: gl
+          ? {
+              contextLost: gl.isContextLost(),
+              version: gl.getParameter(gl.VERSION),
+              renderer: debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : null,
+            }
+          : null,
+      };
+    })
+    .catch(() => null);
+}
 
 try {
   await new Promise((resolve, reject) => {
@@ -57,8 +83,8 @@ try {
   });
 
   await mkdir(artifacts, { recursive: true });
-  browser = await chromium.launch({ channel: 'chrome', headless: true });
-  const page = await browser.newPage({
+  browser = await chromium.launch({ channel: 'chrome', headless: true, args: launchArgs });
+  page = await browser.newPage({
     viewport: { width: 1440, height: 1000 },
     deviceScaleFactor: 1,
   });
@@ -80,8 +106,17 @@ try {
   });
 
   await page.goto(url, { waitUntil: 'networkidle' });
-  await page.waitForFunction(() => Boolean(window.softLab), undefined, { timeout: 60000 });
-  assert.equal(await page.locator('#error-banner').isHidden(), true, 'initialization must succeed');
+  await page.waitForFunction(
+    () => Boolean(window.softLab) || document.getElementById('error-banner')?.hidden === false,
+    undefined,
+    { timeout: 60000 },
+  );
+  const initialState = await readPageState();
+  assert.equal(
+    await page.locator('#error-banner').isHidden(),
+    true,
+    `initialization must succeed: ${JSON.stringify({ initialState, errors })}`,
+  );
   await page.screenshot({ path: path.join(artifacts, 'browser-desktop.png') });
   await page.addScriptTag({
     content: await readFile(path.join(root, 'tests/browser/checks.js'), 'utf8'),
@@ -194,6 +229,8 @@ try {
   const result = {
     ...checks,
     browserVersion: browser.version(),
+    launchArgs,
+    initialState,
     url,
     errors,
     failedRequests,
@@ -209,6 +246,31 @@ try {
     `${JSON.stringify(result, null, 2)}\n`,
   );
   console.log(JSON.stringify(result, null, 2));
+} catch (error) {
+  const diagnostics = {
+    error: error.stack || String(error),
+    browserVersion: browser?.version(),
+    launchArgs,
+    url,
+    pageState: await readPageState(),
+    errors,
+    failedRequests,
+    failedResponses,
+    serverOutput,
+  };
+  console.error(JSON.stringify(diagnostics, null, 2));
+  try {
+    await mkdir(artifacts, { recursive: true });
+    await writeFile(
+      path.join(artifacts, 'browser-failure.json'),
+      `${JSON.stringify(diagnostics, null, 2)}\n`,
+    );
+    if (page && !page.isClosed())
+      await page.screenshot({ path: path.join(artifacts, 'browser-failure.png'), timeout: 5000 });
+  } catch (diagnosticError) {
+    console.error(`Browser diagnostics could not be saved: ${diagnosticError.message}`);
+  }
+  throw error;
 } finally {
   try {
     await browser?.close();

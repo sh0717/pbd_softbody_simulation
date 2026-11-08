@@ -162,11 +162,8 @@ Emscripten 4.0.23, C++20, `-O3 -DNDEBUG`, 부동소수점 연산 결합 비활�
 
 기존 JavaScript 코어는 `tests/fixtures/physics-reference.js`와
 `tests/fixtures/soft-contacts.js`에 비교용으로 보존했습니다. 실행 HTML은 이를 불러오지 않습니다.
-`tools/benchmarks/cpp.mjs`는 같은 메시·객체 수·초기 위치와 설정으로 두 코어를 비교합니다.
-측정에는 JS/Wasm 연결 비용을 포함하며 렌더링·GPU 시간은 제외합니다.
-충돌의 장기 궤적이 비트 단위로 같다고 보장하지 않습니다.
+기준선은 Node 회귀 검사에 사용합니다. 비교한 입력 밖의 장기 궤적이나 GPU 성능을 보장하지 않습니다.
 
-현재 소스의 독립 판정과 실제 실행 범위는 [독립 리뷰](portfolio-review.md)를 확인합니다.
-판정 기준과 소스·배포물 지문은 [품질 기준](quality-standard.md)을 따릅니다.
+전체 빌드·검사는 `npm run verify`, 실행 결과의 해시 대조는 `npm run check:execution`을 사용합니다.
 과거 과제 PDF·영상·벤치마크·작업 보고서는 공개 범위에서 제외하며 현재 성능 근거로 사용하지 않습니다.
 명명·주석·서식은 [C++ 적용 규칙](cpp-coding-standard.md)에 정리합니다.

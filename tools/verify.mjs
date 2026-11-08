@@ -1,15 +1,15 @@
-// Run on a frozen source tree. A successful run does not award review points.
+// 검사 시작 시점의 소스와 배포 바이트를 완료 시점까지 고정합니다.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runtimeFingerprint, sourceFingerprint } from './quality.mjs';
+import { runtimeFingerprint, sourceFingerprint } from './fingerprint.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const npmCli = process.env.npm_execpath;
-assert.ok(npmCli && existsSync(npmCli), 'Run this tool with npm run verify:portfolio');
+assert.ok(npmCli && existsSync(npmCli), 'Run this tool with npm run verify');
 const checks = [];
 await mkdir(path.join(root, 'artifacts'), { recursive: true });
 
@@ -19,7 +19,7 @@ function run(name, command, args) {
   const result = spawnSync(command, args, { cwd: root, encoding: 'utf8', windowsHide: true });
   const output = (result.stdout || '') + (result.stderr || '') + (result.error?.message || '');
   process.stdout.write(output);
-  const log = `artifacts/portfolio-${name.replaceAll(':', '-')}.log`;
+  const log = `artifacts/verify-${name.replaceAll(':', '-')}.log`;
   checks.push({
     name,
     exitCode: result.status ?? -1,
@@ -78,7 +78,7 @@ try {
     process.platform === 'win32' ? 'ctest.exe' : 'ctest',
   );
   for (const configuration of ['Debug', 'Release']) {
-    const directory = `build/portfolio-native-${configuration.toLowerCase()}`;
+    const directory = `build/verify-native-${configuration.toLowerCase()}`;
     // Keep native execution in one gate, retaining configure/build output as well.
     const args = [
       '-S',
@@ -110,7 +110,7 @@ try {
       exitCode = result.status ?? -1;
       if (exitCode !== 0) break;
     }
-    const log = `artifacts/portfolio-native-${configuration}.log`;
+    const log = `artifacts/verify-native-${configuration}.log`;
     await writeFile(path.join(root, log), output);
     checks.push({
       name: `native:${configuration}`,
@@ -136,7 +136,7 @@ try {
   process.exitCode = 1;
 } finally {
   await writeFile(
-    path.join(root, 'artifacts/portfolio-validation.json'),
+    path.join(root, 'artifacts/validation.json'),
     JSON.stringify(
       {
         schemaVersion: 1,

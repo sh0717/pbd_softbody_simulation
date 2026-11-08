@@ -125,8 +125,8 @@ C++ 파일은 PascalCase `.h/.cpp`, JS 복합 파일명은 kebab-case, Node 도�
 | `npm run check:structure` | 경로·manifest·의존 방향 검사 |
 | `npm run check:runtime` | C++ 원본과 배포 Wasm의 해시 연결 검사 |
 | `npm run check` | 서식 → 구조 → Wasm 원본 연결 → Node 회귀 검사 |
-| `npm run verify:portfolio` | 재빌드 → check → native Debug/Release → 브라우저 검사 |
-| `npm run check:quality` | 독립 코드 리뷰 점수·근거·소스 변경 여부 확인 |
+| `npm run verify` | 재빌드 → check → native Debug/Release → 브라우저 검사 |
+| `npm run check:execution` | 전체 검사 결과의 소스·배포물 해시·종료 코드 확인 |
 
 루트 `CMakeLists.txt`를 `cmake -S .`의 진입점으로 사용합니다.
 SDK 버전은 Emscripten 4.0.23을 유지하고 컴파일 옵션·ABI·메모리 모델은 프로젝트별
@@ -151,10 +151,9 @@ PBD 네이티브 CMake만 Emscripten 전용 bindings를 제외하고 Wasm 빌드
 
 `check:structure`는 파일 존재·소스 등록·문자열로 명시한 import/include·HTML 자원 경로와
 기본 계층 의존을 확인하는 빠른 검사입니다. JS/C++ 전체 의미 분석이나 동적 경로의 증명은 아닙니다.
-`verify:unification`은 이번 작업의 `build/style-unification-baseline/sources.zip`과
-`manifest.json`이 있을 때 보존본 무결성을 확인하고 같은 장면의 매 스텝 수치 상태를 비교합니다.
-새 개발 환경의 필수 기본 검사는 baseline을 요구하지 않는 `npm run check`입니다.
-포트폴리오의 점수·필수 실행·반복 리뷰 기준은 [quality-standard.md](quality-standard.md)를 따릅니다.
+새 개발 환경에서는 `npm run check`로 배포 Wasm과 회귀 검사를 실행합니다.
+`npm run verify`는 Wasm 재빌드·네이티브 Debug/Release·브라우저 검사까지 실행합니다.
+실행 결과는 `artifacts/validation.json`에 기록하며 `npm run check:execution`으로 해시를 대조합니다.
 
 ## 9. SPH 적용
 

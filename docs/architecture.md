@@ -126,7 +126,6 @@ src/
   data/bunny-data.js
 tools/
   build_wasm.py, build_native.ps1, vscode.ps1, serve.py
-  benchmarks/
 tests/
   unit/, native/, browser/, fixtures/, legacy/
 docs/
@@ -167,8 +166,8 @@ artifacts/   현재 검증 결과
 바인딩의 `ResolveHandle`은 기존 registry/주소 계약으로 객체를 찾습니다.
 `ReadVector/ReadDoubleArray/ReadInverseMasses`는 JS 입력 변환,
 `ToArray`는 JS 배열 복사, `BorrowMemoryView`는 native 저장소의 비소유 대여입니다.
-외부 등록 문자열과 필드 번호는 보존합니다. 현재 실행 근거와 범위는
-[독립 리뷰](portfolio-review.md)를 확인합니다.
+외부 등록 문자열과 필드 번호는 보존합니다. 전체 검사는 `npm run verify`로 실행하며
+소스·배포물 해시와 각 종료 코드는 `artifacts/validation.json`에 기록합니다.
 
 
 C++ 파일의 공통 배치와 기존 경로의 이동 기준은 [native 내부 구조](native-layout.md)를 따릅니다.

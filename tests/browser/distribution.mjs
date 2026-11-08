@@ -44,8 +44,11 @@ const errors = [],
   wasmRequests = [],
   checks = [];
 let browser;
+// CI의 WebGL 검사는 하드웨어 GPU 없이도 같은 렌더링 경로를 실행합니다.
+const launchArgs =
+  process.env.PBD_TEST_SOFTWARE_WEBGL === '1' ? ['--use-gl=angle', '--use-angle=swiftshader'] : [];
 try {
-  browser = await chromium.launch({ channel: 'chrome', headless: true });
+  browser = await chromium.launch({ channel: 'chrome', headless: true, args: launchArgs });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   await context.route('**/*', async (route) => {
     const url = route.request().url();

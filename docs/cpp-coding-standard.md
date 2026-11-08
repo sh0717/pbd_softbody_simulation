@@ -124,7 +124,7 @@ Epic 저작권 문구나 엔진 구현 코드를 프로젝트 소유 코드에 �
 이 검사는 어휘 기반의 빠른 검사이며 완전한 C++ 의미 분석은 아닙니다.
 auto 예외의 적절성, const·소유권·책임 경계는 코드 리뷰에서 확인합니다.
 
-C++을 변경하면 `npm run verify:portfolio`로 Wasm 재생성, Node 회귀, native Debug/Release,
+C++을 변경하면 `npm run verify`로 Wasm 재생성, Node 회귀, native Debug/Release,
 브라우저를 검사합니다. 명명 변경도 외부 문자열·ABI 토큰과 계산 순서를 별도로 대조합니다.
 이전 품질 점수·리뷰 지문은 현재 소스 검증으로 자동 승계하지 않습니다.
 
@@ -145,4 +145,4 @@ C++을 변경하면 `npm run verify:portfolio`로 Wasm 재생성, Node 회귀, n
 - `FConstraintSolver`는 상태 없는 정적 커널이며 `friend`로 입자·승수 수정 권한을 모읍니다.
   객체 생성이나 엔진 의존성을 추가하지 않습니다.
 
-현재 소스의 검토와 실행 범위는 [독립 리뷰](portfolio-review.md)를 확인합니다.
+현재 소스의 빌드·테스트는 `npm run verify`로 실행합니다.

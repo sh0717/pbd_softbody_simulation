@@ -18,8 +18,8 @@ playwright-report/
 
 # Machine-specific editor and CMake configuration
 CMakeUserPresets.json
-.vscode/c_cpp_properties.json
-*.local.code-workspace
+.vscode/
+*.code-workspace
 .vs/
 *.user
 *.suo
@@ -62,16 +62,20 @@ Desktop.ini
 /docs/*
 !/docs/architecture.md
 !/docs/code-reading.md
-!/docs/code-review-guide.md
 !/docs/cpp-architecture.md
 !/docs/cpp-coding-standard.md
 !/docs/desktop.md
-!/docs/github-upload.md
 !/docs/native-layout.md
-!/docs/portfolio-review.md
-!/docs/portfolio-score.json
 !/docs/project-conventions.md
 !/docs/project-layout.md
-!/docs/quality-standard.md
-!/docs/vscode-development.md
 !/docs/xpbd-lambda.md
+
+# Local editor setup, historical comparisons and retired review automation
+/tools/benchmarks/
+/tools/build_native.ps1
+/tools/preserved-runtime.mjs
+/tools/verify-unification.mjs
+/tools/vscode.ps1
+/tools/quality.mjs
+/tools/verify-portfolio.mjs
+/tests/unit/quality.test.mjs
