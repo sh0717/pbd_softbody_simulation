@@ -107,7 +107,6 @@ test('committed body and obstacle changes stop on a view synchronization failure
       addBody: failView,
       addObstacle: failView,
       syncObstacle: failView,
-      replaceObstacleShape: failView,
       removeObstacle: failView,
     };
     const controller = new ExperimentController({

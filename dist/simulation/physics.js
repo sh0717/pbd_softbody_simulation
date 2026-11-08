@@ -111,8 +111,7 @@
       current != null &&
       typeof current.shape === 'string' &&
       current.shape === previous.shape &&
-      typeof current.radius === 'number' &&
-      current.radius === previous.radius &&
+      !('radius' in current) &&
       typeof current.bumper === 'boolean' &&
       current.bumper === previous.bumper &&
       typeof current.bumperStrength === 'number' &&
@@ -279,35 +278,26 @@
     }
     getObstacleLimits(obstacle) {
       this._check();
-      return [0, 1, 2].map((axis) =>
-        Math.max(
-          0,
-          this.bounds -
-            (obstacle.shape === 'sphere' ? obstacle.radius : obstacle.size[axis] * 0.5) -
-            2,
-        ),
-      );
+      return [0, 1, 2].map((axis) => Math.max(0, this.bounds - obstacle.size[axis] * 0.5 - 2));
     }
     _prepareObstacle(options) {
       const next = {
         shape: 'box',
         position: [0, -3, 0],
         size: [4, 2, 4],
-        radius: 2,
         bumper: true,
         bumperStrength: 4,
         ...options,
       };
       next.position = Array.from(next.position);
       next.size = Array.from(next.size);
-      if (!['box', 'sphere'].includes(next.shape)) throw new TypeError('Unknown obstacle shape');
+      if (next.shape !== 'box') throw new TypeError('Only box obstacles are supported');
+      if ('radius' in next) throw new TypeError('Box obstacles do not support radius');
       if (
         next.position.length !== 3 ||
         next.size.length !== 3 ||
         !next.position.every(Number.isFinite) ||
-        !next.size.every((value) => Number.isFinite(value) && value > 0) ||
-        !Number.isFinite(next.radius) ||
-        next.radius <= 0
+        !next.size.every((value) => Number.isFinite(value) && value > 0)
       )
         throw new TypeError('Invalid obstacle geometry');
       if (
@@ -338,7 +328,6 @@
         shape: input.shape,
         position: copyInputVector(input.position),
         size: copyInputVector(input.size),
-        radius: input.radius,
         bumper: input.bumper,
         bumperStrength: input.bumperStrength,
       }));

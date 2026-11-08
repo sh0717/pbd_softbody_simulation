@@ -54,6 +54,7 @@ BFCache에 보존되는 pagehide에서는 모듈을 해제하지 않습니다.
 
 ## 명령·조회·실패
 
+장애물은 축 정렬 Box이며 `size`의 세 성분으로 전체 길이를 지정합니다. 구형 장애물과 `radius` 입력은 거부합니다.
 설정은 `configure`, 장애물은 `addObstacle`/`updateObstacle`/`removeObstacle`,
 입자·물체 이동은 검증된 명령을 호출합니다. 잘못된 설정·형상·소유자는 예외로 거부하고
 검증 성공 뒤 JS mirror를 반영합니다. 기존 mutable obstacle mirror는 과거 소비자 호환용이며

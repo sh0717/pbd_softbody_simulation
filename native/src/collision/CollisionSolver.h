@@ -84,8 +84,6 @@ private:
 	/** 정적 접촉은 정점마다 경계의 X/Y/Z, 입력 장애물 순서로 처리합니다. */
 	void SolveBoundaryContact(FBody& InOutBody, std::uint32_t VertexIndex, double Limit, bool bRecordContacts);
 
-	static bool ProjectSphereObstacle(FBody& InOutBody, std::uint32_t VertexIndex, const FObstacle& Obstacle, double ParticleRadius, FVector3D& OutNormal);
-
 	static bool ProjectBoxObstacle(FBody& InOutBody, std::uint32_t VertexIndex, const FObstacle& Obstacle, double ParticleRadius, FVector3D& OutNormal);
 
 	static void RestituteSoftContact(const FContact& Contact, double TargetNormalVelocity, double InverseMassA);

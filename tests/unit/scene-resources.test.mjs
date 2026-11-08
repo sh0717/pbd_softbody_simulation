@@ -14,7 +14,7 @@ for (const kind of ['body', 'obstacle']) {
     const calls = [];
     const scene = Object.create(PhysicsScene.prototype);
     scene.THREE = {
-      SphereGeometry: class {
+      [kind === 'body' ? 'SphereGeometry' : 'BoxGeometry']: class {
         dispose() {
           calls.push('geometry');
         }
@@ -28,7 +28,7 @@ for (const kind of ['body', 'obstacle']) {
     const create =
       kind === 'body'
         ? () => scene.addBody({ type: 'ball', radius: 1 }, 0, false)
-        : () => scene.addObstacle({ shape: 'sphere' });
+        : () => scene.addObstacle({ shape: 'box' });
     assert.throws(create, (error) => error === failure);
     assert.deepEqual(calls, ['geometry']);
   });

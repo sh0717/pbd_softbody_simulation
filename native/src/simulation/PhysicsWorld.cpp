@@ -20,10 +20,6 @@ void FPhysicsWorld::SetObstacles(std::vector<FObstacle> InObstacles)
 		{
 			throw std::invalid_argument("Obstacle IDs must be unique and nonzero");
 		}
-		if (!std::isfinite(Obstacle.Radius) || Obstacle.Radius <= 0)
-		{
-			throw std::invalid_argument("Invalid obstacle radius");
-		}
 		for (EAxis Axis : AllAxes)
 		{
 			if (!std::isfinite(Obstacle.Position[Axis]) || !std::isfinite(Obstacle.Size[Axis]) || Obstacle.Size[Axis] <= 0)

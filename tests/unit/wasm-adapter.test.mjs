@@ -5,6 +5,46 @@ const require = createRequire(import.meta.url);
 const api = await require('../../src/simulation/physics.js').init();
 const bunny = require('../../src/data/bunny-data.js');
 
+test('box-only obstacle boundary rejects sphere and radius without changing registered geometry', () => {
+  const world = new api.PhysicsWorld({ bounds: 100, gravity: [0, 0, 0] });
+  try {
+    const obstacle = world.addObstacle({ position: [0, 0, 0], size: [2, 2, 2], bumper: false });
+    const ball = world.addBall(1, [0, 0, 0]);
+    const saved = JSON.stringify(obstacle);
+    for (const options of [{ shape: 'sphere' }, { radius: 2 }]) {
+      assert.throws(() => world.addObstacle(options), TypeError);
+      assert.throws(() => world.updateObstacle(obstacle, options), TypeError);
+      assert.equal(JSON.stringify(obstacle), saved);
+      assert.equal(world.obstacles.length, 1);
+
+      // 공개 mirror 직접 수정은 JS 명령 검증을 우회하므로 Wasm 경계에서도 거부해야 합니다.
+      obstacle.size = [100, 100, 100];
+      world.obstacles.push({ shape: 'box', position: [0, 0, 0], size: [2, 2, 2], ...options });
+      assert.throws(() => world.step(0), TypeError);
+      world.obstacles.pop();
+      obstacle.size = [2, 2, 2];
+      Object.assign(obstacle, options);
+      assert.throws(
+        () => world.step(0),
+        TypeError,
+        'cached inputs must validate direct shape/radius edits',
+      );
+      obstacle.shape = 'box';
+      delete obstacle.radius;
+    }
+    assert.equal('radius' in obstacle, false);
+    world.settleObstacleContacts();
+    assert.deepEqual(
+      Array.from(ball.positions),
+      [2, 0, 0],
+      'failed batches preserve the registered box',
+    );
+    assert.equal(world.step(0), false);
+  } finally {
+    world.dispose();
+  }
+});
+
 test('configuration commands validate before committing mirrored settings', () => {
   const world = new api.PhysicsWorld({ dt: 1 / 60, substeps: 3 });
   world.configure({ dt: 0.02, mode: 'pbd', gravity: [0, -9.81, 0] });
@@ -33,12 +73,14 @@ test('obstacle commands preserve ownership, object identity and failed edit stat
   const obstacle = world.addObstacle({ shape: 'box', position: [100, 0, 0] });
   assert.equal(world.obstacles[0], obstacle);
   assert.deepEqual(obstacle.position, [6, 0, 0]);
-  world.updateObstacle(obstacle, { shape: 'sphere', radius: 3 });
+  world.updateObstacle(obstacle, { size: [6, 2, 4] });
   assert.equal(world.obstacles[0], obstacle);
   assert.deepEqual(obstacle.position, [5, 0, 0]);
   const saved = JSON.stringify(obstacle);
   for (const edit of [
     { radius: -1 },
+    { radius: 1 },
+    { shape: 'sphere' },
     { size: [1, NaN, 1] },
     { shape: 'invalid' },
     { bumperStrength: 20 },
@@ -46,7 +88,7 @@ test('obstacle commands preserve ownership, object identity and failed edit stat
     assert.throws(() => world.updateObstacle(obstacle, edit));
     assert.equal(JSON.stringify(obstacle), saved);
   }
-  assert.throws(() => other.updateObstacle(obstacle, { radius: 1 }), /another world/);
+  assert.throws(() => other.updateObstacle(obstacle, { size: [2, 2, 2] }), /another world/);
   assert.throws(() => other.removeObstacle(obstacle), /another world/);
   assert.throws(() => world.addObstacle({ position: [0, Infinity, 0] }));
   assert.equal(world.obstacles.length, 1);

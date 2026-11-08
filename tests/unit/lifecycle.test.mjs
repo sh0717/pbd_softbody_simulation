@@ -131,10 +131,10 @@ test('partial scene creation preserves its cause and still removes the canvas', 
   }
 });
 
-test('obstacle removal finishes all releases and failed replacement keeps its existing geometry', () => {
+test('box obstacle removal finishes all resource releases', () => {
   const failure = new Error('geometry dispose failed');
   const calls = [];
-  const obstacle = { shape: 'sphere' };
+  const obstacle = { shape: 'box' };
   const mesh = {
     geometry: {
       dispose() {
@@ -147,15 +147,6 @@ test('obstacle removal finishes all releases and failed replacement keeps its ex
   const scene = Object.create(PhysicsScene.prototype);
   scene.scene = { remove: () => calls.push('remove') };
   scene.obstacleViews = new Map([[obstacle, mesh]]);
-  const creationFailure = new Error('replacement allocation failed');
-  scene.makeObstacleGeometry = () => {
-    throw creationFailure;
-  };
-  assert.throws(
-    () => scene.replaceObstacleShape(obstacle),
-    (error) => error === creationFailure,
-  );
-  assert.deepEqual(calls, [], 'the old geometry remains usable if construction fails');
   assert.throws(
     () => scene.removeObstacle(obstacle),
     (error) => error === failure,

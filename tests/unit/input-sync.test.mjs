@@ -62,7 +62,7 @@ test('unchanged steps and explicit no-op commands avoid native input reconstruct
     f.world.step(0);
     f.world.settleObstacleContacts();
     f.world.configure({});
-    f.world.updateObstacle(obstacle, { radius: obstacle.radius });
+    f.world.updateObstacle(obstacle, { size: obstacle.size.slice() });
     assert.deepEqual(f.calls, { configure: 0, setObstacles: 0 });
   } finally {
     f.world.dispose();
@@ -187,12 +187,16 @@ test('a failed native commit is retried and a changed native function is not hid
     });
     for (let attempt = 0; attempt < 2; attempt++)
       assert.throws(
-        () => f.world.updateObstacle(obstacle, { radius: 3 }),
+        () => f.world.updateObstacle(obstacle, { size: [6, 2, 4] }),
         (error) => error === failure,
       );
-    assert.equal(obstacle.radius, 2, 'failed commands retain the original public obstacle');
+    assert.deepEqual(
+      Array.from(obstacle.size),
+      [4, 2, 4],
+      'failed commands retain the original public obstacle',
+    );
     f.overrides.delete('setObstacles');
-    f.world.updateObstacle(obstacle, { radius: 3 });
+    f.world.updateObstacle(obstacle, { size: [6, 2, 4] });
     f.world.step(0);
     assert.equal(f.calls.setObstacles, before + 1);
   } finally {

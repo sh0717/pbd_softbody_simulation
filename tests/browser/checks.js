@@ -84,7 +84,15 @@ async function runSoftLabChecks() {
   const oldSize = obstacle.size.slice();
   check(
     'Obstacle controls offer boxes only',
-    !$('add-sphere') && !$('obstacle-shape') && !$('sphere-size'),
+    !$('add-sphere') &&
+      !$('obstacle-shape') &&
+      !$('sphere-size') &&
+      world.obstacles.every(
+        (item) =>
+          item.shape === 'box' &&
+          !('radius' in item) &&
+          app.obstacleViews.get(item).geometry.type === 'BoxGeometry',
+      ),
   );
   input('size-y-number', 2.3);
   check(

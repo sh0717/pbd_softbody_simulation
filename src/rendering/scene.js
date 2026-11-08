@@ -152,18 +152,12 @@ export class PhysicsScene {
     }
   }
 
-  makeObstacleGeometry(shape) {
-    return shape === 'sphere'
-      ? new this.THREE.SphereGeometry(1, 40, 28)
-      : new this.THREE.BoxGeometry(1, 1, 1);
-  }
-
   addObstacle(obstacle) {
     let geometry;
     let material;
     let mesh;
     try {
-      geometry = this.makeObstacleGeometry(obstacle.shape);
+      geometry = new this.THREE.BoxGeometry(1, 1, 1);
       material = new this.THREE.MeshStandardMaterial({
         color: 0x91a184,
         roughness: 0.65,
@@ -196,17 +190,8 @@ export class PhysicsScene {
   syncObstacle(obstacle) {
     const mesh = this.obstacleViews.get(obstacle);
     mesh.position.fromArray(obstacle.position);
-    if (obstacle.shape === 'sphere') mesh.scale.setScalar(obstacle.radius);
-    else mesh.scale.fromArray(obstacle.size);
+    mesh.scale.fromArray(obstacle.size);
     mesh.updateMatrixWorld(true);
-  }
-
-  replaceObstacleShape(obstacle) {
-    const mesh = this.obstacleViews.get(obstacle);
-    const geometry = this.makeObstacleGeometry(obstacle.shape);
-    const previous = mesh.geometry;
-    mesh.geometry = geometry;
-    previous.dispose();
   }
 
   removeObstacle(obstacle) {

@@ -290,7 +290,7 @@ namespace
 		World.AddBall(1, {2, 0, 0});
 		FObstacle Obstacle;
 		Obstacle.Id = 1;
-		Obstacle.bSphere = true;
+		Obstacle.Size = {2, 2, 2};
 		Obstacle.bBumper = true;
 		Obstacle.Strength = 4;
 		World.SetObstacles({Obstacle});
@@ -620,6 +620,51 @@ namespace
 		Require(StatsValues(Session.GetStats()) == StatsValues(FStats{}), "empty session preparation retained previous diagnostics");
 	}
 
+	void BoxObstacleGeometryValidationIsAtomic()
+	{
+		FPhysicsWorld World;
+		FObstacle Box;
+		Box.Id = 7;
+		Box.Position = {1, 2, 3};
+		Box.Size = {2, 4, 6};
+		World.SetObstacles({Box});
+		const std::array<double, 4> InvalidDimensions{0, -1, std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity()};
+		for (const EAxis Axis : AllAxes)
+		{
+			for (const double InvalidDimension : InvalidDimensions)
+			{
+				FObstacle InvalidBox = Box;
+				InvalidBox.Size[Axis] = InvalidDimension;
+				bool bRejected = false;
+				try
+				{
+					World.SetObstacles({InvalidBox});
+				}
+				catch (const std::invalid_argument&)
+				{
+					bRejected = true;
+				}
+				Require(bRejected && World.GetObstacles().size() == 1 && World.GetObstacles()[0].Id == Box.Id && World.GetObstacles()[0].Size == Box.Size && World.GetObstacles()[0].Position == Box.Position, "invalid box dimensions changed registered geometry");
+				if (std::isfinite(InvalidDimension))
+				{
+					continue;
+				}
+				InvalidBox = Box;
+				InvalidBox.Position[Axis] = InvalidDimension;
+				bRejected = false;
+				try
+				{
+					World.SetObstacles({InvalidBox});
+				}
+				catch (const std::invalid_argument&)
+				{
+					bRejected = true;
+				}
+				Require(bRejected && World.GetObstacles()[0].Position == Box.Position && World.GetObstacles()[0].Size == Box.Size, "nonfinite box position changed registered geometry");
+			}
+		}
+	}
+
 	void StaticContactsPreserveBoundaryObstacleOrderAndPinnedParticles()
 	{
 		const std::vector<double> Positions{2, -2, 2, 3, 3, 3};
@@ -627,20 +672,19 @@ namespace
 		FSoftBody SilentBody(Positions, {}, {}, {}, {}, {1, 0});
 		FSettings Settings;
 		Settings.Bounds = 1;
-		FObstacle Sphere;
-		Sphere.Id = 9;
-		Sphere.bSphere = true;
-		Sphere.Position = {1, -1, 1};
-		Sphere.Radius = 0.5;
+		FObstacle FirstBox;
+		FirstBox.Id = 9;
+		FirstBox.Position = {1, -1, 1};
+		FirstBox.Size = {1, 1, 1};
 		FObstacle Box;
 		Box.Id = 4;
 		Box.Position = {1.5, -1, 1};
-		const std::vector<FObstacle> Obstacles{Sphere, Box};
+		const std::vector<FObstacle> Obstacles{FirstBox, Box};
 		FCollisionSolver Solver;
 		Solver.SolveStatic(Body, Obstacles, Settings);
 		Require(ReadParticleVector(Body.GetPositions(), 0) == FVector3D{2, -1, 1} && ReadParticleVector(Body.GetPositions(), 1) == FVector3D{3, 3, 3}, "static projection changed obstacle order, box face tie, or a pinned particle");
 		const std::vector<FContact>& Contacts = Solver.GetContacts();
-		Require(Contacts.size() == 5, "boundary/sphere/box contacts were skipped or duplicated");
+		Require(Contacts.size() == 5, "boundary/box contacts were skipped or duplicated");
 		const std::array<FVector3D, 5> Normals{FVector3D{-1, 0, 0}, FVector3D{0, 1, 0}, FVector3D{0, 0, -1}, FVector3D{1, 0, 0}, FVector3D{1, 0, 0}};
 		const std::array<std::uint32_t, 5> ObstacleIds{0, 0, 0, 9, 4};
 		for (std::size_t Index = 0; Index < Contacts.size(); ++Index)
@@ -652,7 +696,7 @@ namespace
 		Require(SilentBody.GetPositions() == Body.GetPositions() && Solver.GetContacts().empty(), "silent settle projection changed geometry or recorded contacts");
 	}
 
-	void StaticContactsPreserveExteriorBoxAndSphereTangency()
+	void StaticContactsPreserveExteriorBoxAndTangency()
 	{
 		FSettings Settings;
 		Settings.Bounds = 100;
@@ -663,17 +707,16 @@ namespace
 		FCollisionSolver Solver;
 		Solver.SolveStatic(Body, {Box}, Settings);
 		Require(ReadParticleVector(Body.GetPositions(), 0) == FVector3D{1.5, 0, 0} && Solver.GetContacts().size() == 1 && Solver.GetContacts()[0].Normal == FVector3D{1, 0, 0}, "exterior box projection lost the closest-point normal");
-		FObstacle Sphere;
-		Sphere.Id = 2;
-		Sphere.bSphere = true;
-		Sphere.Radius = 1.5;
+		FObstacle LargerBox;
+		LargerBox.Id = 2;
+		LargerBox.Size = {3, 3, 3};
 		Body.SetParticlePosition(0, {2, 0, 0});
 		Solver.BeginSubstep();
-		Solver.SolveStatic(Body, {Sphere}, Settings);
-		Require(ReadParticleVector(Body.GetPositions(), 0) == FVector3D{2, 0, 0} && Solver.GetContacts().size() == 1 && Solver.GetContacts()[0].Obstacle == 2, "sphere tangency must record a contact without displacement");
+		Solver.SolveStatic(Body, {LargerBox}, Settings);
+		Require(ReadParticleVector(Body.GetPositions(), 0) == FVector3D{2, 0, 0} && Solver.GetContacts().size() == 1 && Solver.GetContacts()[0].Obstacle == 2, "box tangency must record a contact without displacement");
 		Body.SetParticlePosition(0, {3, 0, 0});
 		Solver.BeginSubstep();
-		Solver.SolveStatic(Body, {Sphere, Box}, Settings);
+		Solver.SolveStatic(Body, {LargerBox, Box}, Settings);
 		Require(ReadParticleVector(Body.GetPositions(), 0) == FVector3D{3, 0, 0} && Solver.GetContacts().empty(), "separated particle retained a contact or changed position");
 	}
 
@@ -853,7 +896,7 @@ namespace
 		}
 		FObstacle Obstacle;
 		Obstacle.Id = 1;
-		Obstacle.bSphere = true;
+		Obstacle.Size = {2, 2, 2};
 		World.SetObstacles({Obstacle});
 		World.Settle();
 		Require(Body->GetPositions()[0] == 1 && Body->GetPositions()[3] == 5, "settle fixture displacement changed");
@@ -1184,7 +1227,8 @@ int main()
 		{"surface topology rejects invalid boundaries before cache publication", SurfaceTopologyRejectsInvalidBoundariesBeforeCachePublication},
 		{"contact session owns batch lifetime and preserves failed preparation", ContactSessionOwnsBatchLifetimeAndPreservesFailedPreparation},
 		{"static contacts preserve boundary/obstacle order and pinned particles", StaticContactsPreserveBoundaryObstacleOrderAndPinnedParticles},
-		{"static contacts preserve exterior box projection and sphere tangency", StaticContactsPreserveExteriorBoxAndSphereTangency},
+		{"box obstacle geometry validation preserves registered state", BoxObstacleGeometryValidationIsAtomic},
+		{"static contacts preserve exterior box projection and tangency", StaticContactsPreserveExteriorBoxAndTangency},
 		{"soft-only contacts refresh edited bounds", SoftOnlyContactsRefreshEditedBounds},
 		{"configure atomicity independent diagnostics and prepare recovery", ConfigureAtomicityAndSnapshot},
 		{"prepare validates before publication and refits geometry with batch diagnostics", PreparePublishesCompleteCacheAndBatchDiagnostics},

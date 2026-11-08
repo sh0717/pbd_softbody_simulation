@@ -5,13 +5,11 @@
 #include <array>
 #include <cstdint>
 
+/** 중심 좌표와 축별 전체 길이로 정의하는 축 정렬 Box 장애물입니다. */
 struct FObstacle
 {
 	// 호스트가 부여하는 장애물 식별자입니다. 월드에 등록할 때 0이 아니고 서로 달라야 합니다.
 	std::uint32_t Id = 0;
-
-	// true는 구, false는 축 정렬 상자 형상의 충돌 투영을 선택합니다.
-	bool bSphere = false;
 
 	// 일반 충돌 처리 외에 재진입·쿨다운 조건에 따른 범퍼 속도 보정을 허용합니다.
 	bool bBumper = false;
@@ -21,9 +19,6 @@ struct FObstacle
 
 	// 상자의 축별 전체 길이입니다. 충돌 계산에서는 절반 크기로 바꿔 사용합니다.
 	FVector3D Size{1, 1, 1};
-
-	// 구 장애물의 실제 반지름입니다. 입자 구체와의 접촉에서는 두 반지름을 더합니다.
-	double Radius = 1;
 
 	// 범퍼가 목표 법선 속도에 더할 값입니다. 단위는 장면 길이/초이며 처리 시 유효성과 상한을 확인합니다.
 	double Strength = 0;

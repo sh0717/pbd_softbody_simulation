@@ -60,7 +60,7 @@ public:
 	}
 
 	/**
-	 * 모든 장애물의 0이 아닌 고유 ID와 형상을 검증한 뒤 목록을 교체합니다.
+	 * 모든 Box 장애물의 0이 아닌 고유 ID, 유한한 중심과 양수 축 길이를 검증한 뒤 목록을 교체합니다.
 	 * @note 검증 실패 시 기존 장애물을 보존하며 범퍼 강도는 범퍼 처리 시 검사합니다.
 	 */
 	void SetObstacles(std::vector<FObstacle> InObstacles);

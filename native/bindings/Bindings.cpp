@@ -377,17 +377,19 @@ EMSCRIPTEN_BINDINGS(pbd_core)
 			FObstacle Obstacle;
 			Obstacle.Id = InputObstacle["nativeId"].as<unsigned>();
 			const std::string Shape = InputObstacle["shape"].as<std::string>();
-			if (Shape != "sphere" && Shape != "box")
+			if (Shape != "box")
 			{
-				throw std::invalid_argument("Invalid obstacle shape");
+				throw std::invalid_argument("Only box obstacles are supported");
 			}
-			Obstacle.bSphere = Shape == "sphere";
+			if (HasProperty(InputObstacle, "radius"))
+			{
+				throw std::invalid_argument("Box obstacles do not support radius");
+			}
 			Obstacle.Position = ReadVector(InputObstacle["position"]);
 			Obstacle.Size = ReadVector(InputObstacle["size"], {1, 1, 1});
-			Obstacle.Radius = ReadNumber(InputObstacle, "radius", 1);
 			Obstacle.bBumper = HasProperty(InputObstacle, "bumper") && InputObstacle["bumper"].as<bool>();
 			Obstacle.Strength = ReadNumber(InputObstacle, "bumperStrength", 0);
-			if (!std::isfinite(Obstacle.Radius) || Obstacle.Radius <= 0 || (Obstacle.Size.X <= 0 || Obstacle.Size.Y <= 0 || Obstacle.Size.Z <= 0))
+			if (Obstacle.Size.X <= 0 || Obstacle.Size.Y <= 0 || Obstacle.Size.Z <= 0)
 			{
 				throw std::invalid_argument("Invalid obstacle dimensions");
 			}

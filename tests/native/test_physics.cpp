@@ -309,7 +309,7 @@ int main()
 		FBall* B = W.AddBall(1, {2, 0, 0});
 		FObstacle O;
 		O.Id = 1;
-		O.bSphere = true;
+		O.Size = {2, 2, 2};
 		O.bBumper = true;
 		O.Strength = 4;
 		W.SetObstacles({O});
@@ -341,7 +341,7 @@ int main()
 		FBall* B = W.AddBall(1, {10, 0, 0}, {3, 2, 1});
 		FObstacle O;
 		O.Id = 1;
-		O.bSphere = true;
+		O.Size = {2, 2, 2};
 		W.SetObstacles({O});
 		W.Settle();
 		Near(A->GetPositions()[0], 2);

@@ -23,7 +23,6 @@ function fixture() {
       'selectObstacle',
       'addObstacle',
       'syncObstacle',
-      'replaceObstacleShape',
       'removeObstacle',
       'resetFlashes',
       'restoreCamera',

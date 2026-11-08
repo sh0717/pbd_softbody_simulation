@@ -25,11 +25,11 @@ function world(options = {}) {
   });
 }
 
-function sphere(options = {}) {
+function box(options = {}) {
   return {
-    shape: 'sphere',
+    shape: 'box',
     position: [0, 0, 0],
-    radius: 1,
+    size: [2, 2, 2],
     bumper: true,
     bumperStrength: 4,
     ...options,
@@ -45,9 +45,9 @@ function place(ball, position) {
   ball.velocities.fill(0);
 }
 
-test('a powered sphere adds its configured launch speed to incoming normal restitution', () => {
+test('a powered box adds its configured launch speed to incoming normal restitution', () => {
   const simulation = world({ restitution: 0.5 });
-  const obstacle = sphere();
+  const obstacle = box();
   simulation.obstacles.push(obstacle);
   const ball = contactBall(simulation, 1, [-1, 0, 0]);
   simulation.step();
@@ -63,7 +63,7 @@ test('a powered sphere adds its configured launch speed to incoming normal resti
 for (const substeps of [1, 3, 10]) {
   test(`one contact entry receives one kick with ${substeps} substeps`, () => {
     const simulation = world({ substeps, solverIterations: 5 });
-    simulation.obstacles.push(sphere());
+    simulation.obstacles.push(box());
     const ball = contactBall(simulation);
     simulation.step();
     near(ball.velocities[0], 4);
@@ -90,7 +90,7 @@ test('a box bumper preserves tangential velocity', () => {
 
 test('continuous contact never repeats the entry kick even after cooldown', () => {
   const simulation = world();
-  simulation.obstacles.push(sphere());
+  simulation.obstacles.push(box());
   const ball = contactBall(simulation);
   simulation.step();
   assert.equal(simulation.bumperHits.length, 1);
@@ -104,7 +104,7 @@ test('continuous contact never repeats the entry kick even after cooldown', () =
 
 test('leaving contact and waiting for cooldown rearms the same obstacle', () => {
   const simulation = world();
-  simulation.obstacles.push(sphere());
+  simulation.obstacles.push(box());
   const ball = contactBall(simulation);
   simulation.step();
   place(ball, [5, 0, 0]);
@@ -117,7 +117,7 @@ test('leaving contact and waiting for cooldown rearms the same obstacle', () => 
 
 test('a released contact cannot retrigger before the per body cooldown expires', () => {
   const simulation = world({ dt: 0.01 });
-  simulation.obstacles.push(sphere());
+  simulation.obstacles.push(box());
   const ball = contactBall(simulation);
   simulation.step();
   place(ball, [5, 0, 0]);
@@ -130,8 +130,8 @@ test('a released contact cannot retrigger before the per body cooldown expires',
 
 test('cooldowns belong to each body and obstacle pair', () => {
   const simulation = world();
-  const firstObstacle = sphere();
-  const secondObstacle = sphere({ position: [10, 0, 0], bumperStrength: 6 });
+  const firstObstacle = box();
+  const secondObstacle = box({ position: [10, 0, 0], bumperStrength: 6 });
   simulation.obstacles.push(firstObstacle, secondObstacle);
   const first = contactBall(simulation);
   const second = simulation.addBall(1, [-2, 0, 0]);
@@ -149,7 +149,7 @@ test('cooldowns belong to each body and obstacle pair', () => {
 
 test('a brief contact detection gap does not rearm a cooled bumper', () => {
   const simulation = world({ dt: 0.01 });
-  simulation.obstacles.push(sphere());
+  simulation.obstacles.push(box());
   const ball = contactBall(simulation);
   simulation.step();
   for (let frame = 0; frame < 30; frame += 1) {
@@ -166,7 +166,7 @@ test('a brief contact detection gap does not rearm a cooled bumper', () => {
 
 test('soft body launch changes only contacted vertices and reports one body event', () => {
   const simulation = world();
-  simulation.obstacles.push(sphere());
+  simulation.obstacles.push(box());
   const soft = simulation.addSoftBody({
     verts: [1, 0, 0, 0, 1, 0, 3, 0, 0],
     tetEdgeIds: [],
@@ -180,7 +180,7 @@ test('soft body launch changes only contacted vertices and reports one body even
 
 test('pinned contacts never receive a powered impulse', () => {
   const simulation = world();
-  simulation.obstacles.push(sphere());
+  simulation.obstacles.push(box());
   const ball = contactBall(simulation, 0);
   simulation.step();
   assert.deepEqual(Array.from(ball.positions), [2, 0, 0]);
@@ -190,7 +190,7 @@ test('pinned contacts never receive a powered impulse', () => {
 
 test('paused editing and zero timestep never launch bodies or advance simulation time', () => {
   const simulation = world({ dt: 0 });
-  simulation.obstacles.push(sphere());
+  simulation.obstacles.push(box());
   const ball = simulation.addBall(1, [0, 0, 0]);
   simulation.settleObstacleContacts();
   near(Math.hypot(...ball.positions), 2);
@@ -202,7 +202,7 @@ test('paused editing and zero timestep never launch bodies or advance simulation
 
 test('reset clears bumper events and cooldowns and rearms contacts', () => {
   const simulation = world();
-  simulation.obstacles.push(sphere());
+  simulation.obstacles.push(box());
   const ball = contactBall(simulation);
   simulation.step();
   simulation.reset();
@@ -217,7 +217,7 @@ test('reset clears bumper events and cooldowns and rearms contacts', () => {
 for (const strength of [0, -1, NaN, Infinity]) {
   test(`invalid or zero bumper strength ${strength} does not inject energy`, () => {
     const simulation = world();
-    simulation.obstacles.push(sphere({ bumperStrength: strength }));
+    simulation.obstacles.push(box({ bumperStrength: strength }));
     const ball = contactBall(simulation);
     simulation.step();
     assert.deepEqual(Array.from(ball.velocities), [0, 0, 0]);
@@ -227,7 +227,7 @@ for (const strength of [0, -1, NaN, Infinity]) {
 
 test('bumper strength is capped at the supported maximum', () => {
   const simulation = world();
-  simulation.obstacles.push(sphere({ bumperStrength: 100 }));
+  simulation.obstacles.push(box({ bumperStrength: 100 }));
   const ball = contactBall(simulation);
   simulation.step();
   near(ball.velocities[0], 12);
@@ -236,7 +236,7 @@ test('bumper strength is capped at the supported maximum', () => {
 
 test('ordinary obstacles keep passive contact behavior', () => {
   const simulation = world();
-  simulation.obstacles.push(sphere({ bumper: false }));
+  simulation.obstacles.push(box({ bumper: false }));
   const ball = contactBall(simulation);
   simulation.step();
   assert.deepEqual(Array.from(ball.velocities), [0, 0, 0]);

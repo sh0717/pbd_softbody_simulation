@@ -251,15 +251,7 @@ void FCollisionSolver::SolveStatic(FBody& InOutBody, const std::vector<FObstacle
 		for (const FObstacle& Obstacle : Obstacles)
 		{
 			FVector3D ContactNormal{};
-			bool bProjected = false;
-			if (Obstacle.bSphere)
-			{
-				bProjected = ProjectSphereObstacle(InOutBody, VertexIndex, Obstacle, ParticleRadius, ContactNormal);
-			}
-			else
-			{
-				bProjected = ProjectBoxObstacle(InOutBody, VertexIndex, Obstacle, ParticleRadius, ContactNormal);
-			}
+			const bool bProjected = ProjectBoxObstacle(InOutBody, VertexIndex, Obstacle, ParticleRadius, ContactNormal);
 			if (bProjected && bRecordContacts)
 			{
 				RecordContact(InOutBody, VertexIndex, nullptr, 0, ContactNormal, Obstacle.Id);
@@ -293,33 +285,6 @@ void FCollisionSolver::SolveBoundaryContact(FBody& InOutBody, std::uint32_t Vert
 			RecordContact(InOutBody, VertexIndex, nullptr, 0, Normal);
 		}
 	}
-}
-
-bool FCollisionSolver::ProjectSphereObstacle(FBody& InOutBody, std::uint32_t VertexIndex, const FObstacle& Obstacle, double ParticleRadius, FVector3D& OutNormal)
-{
-	const std::size_t PositionOffset = std::size_t(VertexIndex) * 3;
-	const FVector3D LocalPosition = ReadParticleVector(InOutBody.GetPositions(), VertexIndex) - Obstacle.Position;
-	const double CombinedRadius = Obstacle.Radius + ParticleRadius;
-	const double DistanceSquared = LocalPosition.Dot(LocalPosition);
-	if (DistanceSquared > CombinedRadius * CombinedRadius)
-	{
-		return false;
-	}
-	const double Distance = std::sqrt(DistanceSquared);
-	if (Distance > MinimumContactNormalLength)
-	{
-		OutNormal = LocalPosition * (1 / Distance);
-	}
-	else
-	{
-		OutNormal = {1, 0, 0};
-	}
-	const FVector3D ProjectedPosition = Obstacle.Position + OutNormal * CombinedRadius;
-	for (EAxis Axis : AllAxes)
-	{
-		InOutBody.Positions[PositionOffset + ToIndex(Axis)] = ProjectedPosition[Axis];
-	}
-	return true;
 }
 
 bool FCollisionSolver::ProjectBoxObstacle(FBody& InOutBody, std::uint32_t VertexIndex, const FObstacle& Obstacle, double ParticleRadius, FVector3D& OutNormal)
