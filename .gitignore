@@ -68,6 +68,7 @@ Desktop.ini
 !/docs/native-layout.md
 !/docs/no-exceptions.md
 !/docs/parallel-constraints.md
+!/docs/parallel-executor.md
 !/docs/project-conventions.md
 !/docs/project-layout.md
 !/docs/tetrahedron-point-query.md

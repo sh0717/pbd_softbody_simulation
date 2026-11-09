@@ -72,7 +72,7 @@ for threaded in (False, True):
     if threaded:
         # 준비된 Worker만 사용하여 동기 Step 중 브라우저 이벤트 루프를 기다리지 않습니다.
         # 성장 가능한 메모리 계약을 유지합니다. 관련 JS 접근 비용 경고는 출력하되 오류로 승격하지 않습니다.
-        build_arguments.extend(["-pthread", "-sPTHREAD_POOL_SIZE=3", "-sPTHREAD_POOL_SIZE_STRICT=2", "-Wno-error=pthreads-mem-growth"])
+        build_arguments.extend(["-DPARALLEL_EXECUTOR_ENABLE_THREADS=1", "-pthread", "-sPTHREAD_POOL_SIZE=3", "-sPTHREAD_POOL_SIZE_STRICT=2", "-Wno-error=pthreads-mem-growth"])
 
     subprocess.run([sys.executable, str(COMPILER), *build_arguments], cwd=ROOT, env=env, check=True)
 

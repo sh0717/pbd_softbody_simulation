@@ -73,3 +73,48 @@ test('threaded memory growth refreshes borrowed views and world disposal remains
     await new Promise((resolve) => setImmediate(resolve));
   }
 });
+
+test('module worker budget falls back while occupied and is returned after world disposal', async () => {
+  const data = {
+    verts: [0, 0, 0, 1, 0, 0],
+    tetEdgeIds: [0, 1],
+    tetIds: [],
+    tetSurfaceTriIds: [],
+  };
+  const worlds = [];
+  const create = () => {
+    const world = parallel.createWorld({});
+    worlds.push(world);
+    parallel.addSoft(world, data, [0, 0, 0], {});
+    parallel.addSoft(world, data, [3, 0, 0], {});
+    parallel.step(world, 0.01);
+    return world;
+  };
+
+  try {
+    const first = create();
+    const second = create();
+    const availableAfterFirst = 3 - expectedWorkers;
+    const secondWorkers = expectedWorkers <= availableAfterFirst ? expectedWorkers : 0;
+
+    assert.equal(parallel.worldWorkerCount(first), expectedWorkers);
+    assert.equal(parallel.worldWorkerCount(second), secondWorkers);
+    parallel.destroyWorld(first);
+    worlds.splice(worlds.indexOf(first), 1);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // 예약에 실패한 실행기는 계속 순차입니다. 새 실행기만 반환된 예산을 예약합니다.
+    parallel.step(second, 0.01);
+    assert.equal(parallel.worldWorkerCount(second), secondWorkers);
+
+    const third = create();
+    const availableForThird = 3 - secondWorkers;
+    assert.equal(
+      parallel.worldWorkerCount(third),
+      expectedWorkers <= availableForThird ? expectedWorkers : 0,
+    );
+  } finally {
+    for (const world of worlds) parallel.destroyWorld(world);
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+});

@@ -150,6 +150,7 @@ FOperationResult FPhysicsWorld::SolveIteration(double SubstepSeconds)
 		}
 	}
 
+	// 몸체 인덱스를 고정 연속 구간으로 나누므로 계산 중 다음 인덱스를 얻기 위한 잠금이 없습니다.
 	ConstraintExecutor.Run(ConstraintBodies.size(), [this, SubstepSeconds](std::size_t BodyIndex) noexcept
 	{
 		FSoftBody& SoftBody = *ConstraintBodies[BodyIndex];

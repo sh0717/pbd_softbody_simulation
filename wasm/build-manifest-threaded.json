@@ -46,6 +46,7 @@
     "-sINITIAL_MEMORY=33554432",
     "-o",
     "wasm/pbd_core_threaded.js",
+    "-DPARALLEL_EXECUTOR_ENABLE_THREADS=1",
     "-pthread",
     "-sPTHREAD_POOL_SIZE=3",
     "-sPTHREAD_POOL_SIZE_STRICT=2",
@@ -88,18 +89,18 @@
     "native/src/simulation/Body.h": "8a9e5ce75adeeae49f946a764d17cea7164530234bad5eeeb54660d3eb070fe1",
     "native/src/simulation/ConstraintSolver.cpp": "8ebcf39222f4cb260252fb0f290ed78148e7bc2ed9e791d4b60f9a1d3c74b74a",
     "native/src/simulation/ConstraintSolver.h": "5deeadfa3ea291f551af1b88070bb908da50746ab6238f4a85a101a88d3a6740",
-    "native/src/simulation/ParallelExecutor.cpp": "10bf19ce118727aca56dc4c582f5c719dc082bd4419f49dd519338e9d6fa8061",
-    "native/src/simulation/ParallelExecutor.h": "9b2dc976a12883edf331c69737154dbee86220d3f3e79fb73b759215762a1582",
-    "native/src/simulation/PhysicsWorld.cpp": "c5588933fb0c8ef7df48425f4004992b9925621b5b709c1a30c37daede451555",
+    "native/src/simulation/ParallelExecutor.cpp": "43036893c704f0451d2a45140beeb6b606995dc090077108f292031e619c2349",
+    "native/src/simulation/ParallelExecutor.h": "6fc22241e9bbbfa30a12a049f8d9af4cc08190131877e404c4e506cd92d2843d",
+    "native/src/simulation/PhysicsWorld.cpp": "bf4f97396998365608b2a5f7f3a2b0a2a1a6d2f4f6d488e41ed2098960c1f1d4",
     "native/src/simulation/PhysicsWorld.h": "c2842c03dd570fbb957082ae2c28ded848441a7545cfa91b0f29adf6adfeb542",
     "native/src/simulation/SoftBody.cpp": "cdd0d9f6b4aae10e61eecc44044d546f7b90054aaea23329f8b3ba594b4c8822",
     "native/src/simulation/SoftBody.h": "3a8e68944b42196312cbfb246e1561d2a0bb4b2d1c62377a1903c74bc23ae607",
     "native/src/simulation/TimeIntegrator.cpp": "fd246f369de99efd02faa3899a286daf4942bfd666d9d3730f7e38c44366492b",
     "native/src/simulation/TimeIntegrator.h": "36474acadfdf0e4852a67cc972d4ddb21d5607bb7c8e2efdd843f69450c6a1b3",
-    "tools/build_wasm.py": "8ebb3bb019e70f9b26a43f510645919509e439cb4997309fb5d55b17393cab57"
+    "tools/build_wasm.py": "b76dc3c2631bd951f44ca7c3b4da2946aa281c8247cb0fa55de6837959aa09b1"
   },
   "outputHashes": {
     "wasm/pbd_core_threaded.js": "657b24bb52cb89cf0ffe099b84683a2296eaf58663c7f76b7850e43376ee2a22",
-    "wasm/pbd_core_threaded.wasm": "5cf0d796f93590800ccb2c4501a3a64a809934293844402ae84f86b091bb4670"
+    "wasm/pbd_core_threaded.wasm": "f772ee5715acb47b6db9f4c6e0cd4cdae9aaeb275e5e293fae418be3770cc011"
   }
 }

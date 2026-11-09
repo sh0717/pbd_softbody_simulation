@@ -12,6 +12,7 @@ if(MSVC)
 endif()
 
 add_library(pbd_core STATIC ${PBD_SOURCES})
+target_compile_definitions(pbd_core PUBLIC PARALLEL_EXECUTOR_ENABLE_THREADS=1)
 find_package(Threads REQUIRED)
 target_link_libraries(pbd_core PUBLIC Threads::Threads)
 target_include_directories(pbd_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")

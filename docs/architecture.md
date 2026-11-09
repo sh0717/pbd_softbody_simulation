@@ -2,6 +2,7 @@
 
 몸체별 제약 계산의 스레드 소유권·완료 대기·Wasm 실행 조건은
 [제약 병렬화 설계](parallel-constraints.md)를 따릅니다.
+Boids와 동일한 실행 코어의 책임·분할 정책·UE 참조는 [공통 병렬 실행기](parallel-executor.md)에 기록합니다.
 
 공통 설계·코딩 규칙은 [project-conventions.md](project-conventions.md)를 따릅니다.
 이 문서는 PBD의 실제 모듈과 예외를 기록합니다.
@@ -134,9 +135,9 @@ src/
   ui/{controls,picking}.js
   data/bunny-data.js
 tools/
-  build_wasm.py, build_native.ps1, vscode.ps1, serve.py
+  build_wasm.py, build.mjs, native.mjs, serve.mjs, serve.py
 tests/
-  unit/, native/, browser/, fixtures/, legacy/
+  unit/, native/, browser/, desktop/, fixtures/
 docs/
 wasm/        재빌드하는 배포 산출물
 build/       네이티브 빌드와 변경 전 보존본
@@ -144,7 +145,7 @@ artifacts/   현재 검증 결과
 ```
 
 원본 영상·PDF·추가설명과 학습 자료는 기존 위치에 보존합니다.
-`tests/artifacts/`의 과거 실행 로그는 당시 경로·검사 수를 가진 역사 자료입니다.
+`artifacts/`에 보존한 과거 실행 로그는 당시 경로·검사 수를 가진 역사 자료입니다.
 현재 검증 결과로 자동 승계하지 않습니다.
 
 ## 검증과 피드백
