@@ -516,6 +516,37 @@ EMSCRIPTEN_BINDINGS(pbd_core)
 		return Body ? Body->GetRadius() : 0;
 	}>("bodyRadius");
 
+	RegisterFunction<+[](FNativeHandle BodyHandle) -> double
+	{
+		const FBody* Body = ResolveHandle<FBody>(BodyHandle);
+		double Mass = 0;
+		if (Body)
+		{
+			RecordOperationResult(Body->GetMovableMass(Mass));
+		}
+		return Mass;
+	}>("bodyMovableMass");
+
+	RegisterFunction<+[](FNativeHandle BodyHandle, val Input)
+	{
+		FBody* Body = ResolveHandle<FBody>(BodyHandle);
+		if (!Body)
+		{
+			return;
+		}
+		if (Input.isNull() || Input.isUndefined())
+		{
+			RecordOperationResult({EErrorCode::InvalidArgument, "Expected a finite impulse vec3"});
+			return;
+		}
+
+		const FVector3D Impulse = ReadVector(Input);
+		if (BindingResult)
+		{
+			RecordOperationResult(Body->ApplyImpulse(Impulse));
+		}
+	}>("bodyApplyImpulse");
+
 	RegisterFunction<+[](FNativeHandle BodyHandle, val Target)
 	{
 		FBody* Body = ResolveHandle<FBody>(BodyHandle);

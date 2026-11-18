@@ -2,11 +2,11 @@ import { runCleanup } from '../lifecycle.mjs';
 
 const CAMERA_FOV = 32;
 const MIN_CAMERA_ASPECT = 1.12;
-const OBSTACLE_COLOR = 0x233849;
-const OBSTACLE_SELECTED_COLOR = 0x41677a;
-const OBSTACLE_OUTLINE_COLOR = 0x4d7183;
-const BUMPER_OUTLINE_COLOR = 0xcc915a;
-const SELECTED_OUTLINE_COLOR = 0x89f0cc;
+const OBSTACLE_COLOR = 0x30365f;
+const OBSTACLE_SELECTED_COLOR = 0x4d5983;
+const OBSTACLE_OUTLINE_COLOR = 0x838dc4;
+const BUMPER_OUTLINE_COLOR = 0xf9ca7b;
+const SELECTED_OUTLINE_COLOR = 0x76f1ea;
 const BUMPER_FLASH_COLOR = 0xc26828;
 const BUMPER_FLASH_MS = 180;
 
@@ -19,7 +19,7 @@ export class PhysicsScene {
       this.bunnyData = bunnyData;
 
       this.scene = new this.THREE.Scene();
-      this.scene.fog = new this.THREE.Fog(0x101d29, 21, 52);
+      this.scene.fog = new this.THREE.Fog(0x11142d, 21, 52);
 
       this.renderer = new this.THREE.WebGLRenderer({ antialias: true, alpha: true });
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -44,9 +44,9 @@ export class PhysicsScene {
       this.obstacleViews = new Map();
 
       this.restoreCamera();
-      this.scene.add(new this.THREE.HemisphereLight(0xddefff, 0x4f687e, 0.95));
+      this.scene.add(new this.THREE.HemisphereLight(0xe6f0ff, 0x52446d, 0.95));
 
-      const key = new this.THREE.DirectionalLight(0xffead4, 1.56);
+      const key = new this.THREE.DirectionalLight(0xf2ecff, 1.56);
       key.position.set(-4, 11, 8);
       key.castShadow = true;
       key.shadow.mapSize.set(2048, 2048);
@@ -63,13 +63,13 @@ export class PhysicsScene {
 
       this.scene.add(key);
 
-      const rim = new this.THREE.DirectionalLight(0x9cdcff, 1.05);
+      const rim = new this.THREE.DirectionalLight(0xb6adff, 1.05);
       rim.position.set(5, 6, -10);
       this.scene.add(rim);
 
       const floor = new this.THREE.Mesh(
         new this.THREE.PlaneGeometry(100, 100),
-        new this.THREE.MeshStandardMaterial({ color: 0x192a39, roughness: 0.92 }),
+        new this.THREE.MeshStandardMaterial({ color: 0x1b1e36, roughness: 0.92 }),
       );
       floor.material.color.convertSRGBToLinear();
       floor.rotation.x = -Math.PI / 2;
@@ -81,8 +81,8 @@ export class PhysicsScene {
       const grid = new this.THREE.GridHelper(
         bounds * 2,
         20,
-        new this.THREE.Color(0x547f90).convertSRGBToLinear(),
-        new this.THREE.Color(0x2e4c60).convertSRGBToLinear(),
+        new this.THREE.Color(0x807cbd).convertSRGBToLinear(),
+        new this.THREE.Color(0x505a91).convertSRGBToLinear(),
       );
       grid.position.y = -bounds + 0.002;
       grid.material.transparent = true;
@@ -94,7 +94,7 @@ export class PhysicsScene {
       const boundary = new this.THREE.LineSegments(
         new this.THREE.EdgesGeometry(boundsGeometry),
         new this.THREE.LineBasicMaterial({
-          color: 0x284859,
+          color: 0x7774af,
           transparent: true,
           opacity: 0.3,
           toneMapped: false,

@@ -6,6 +6,54 @@ const require = createRequire(import.meta.url);
 const api = await require('../../src/simulation/physics.js').init();
 const bunny = require('../../src/data/bunny-data.js');
 
+test('body impulse changes momentum once and advances positions only on a positive step', () => {
+  const world = new api.PhysicsWorld({ bounds: 100, dt: 0.125, substeps: 1 });
+
+  try {
+    const body = world.addSoftBody({ verts: [0, 0, 0, 1, 0, 0, 2, 0, 0] }, [0, 0, 0], {
+      inverseMass: [1, 0.5, 0],
+      velocity: [1, 0, 2],
+    });
+    const before = body.positions.slice();
+
+    assert.equal(body.movableMass, 3);
+    body.inverseMass[1] = 1;
+    assert.equal(body.movableMass, 2);
+    body.inverseMass[1] = -1;
+    assert.throws(() => body.movableMass, TypeError);
+    assert.throws(() => body.applyImpulse([0, 12, 0]), TypeError);
+    body.inverseMass[1] = 0.5;
+
+    body.applyImpulse(new Float64Array([0, 12, 0]));
+
+    assert.deepEqual(Array.from(body.velocities), [1, 4, 2, 1, 4, 2, 1, 0, 2]);
+    assert.equal(world.step(0), false);
+    assert.deepEqual(body.positions, before);
+
+    for (const invalid of [undefined, null, [0, NaN, 0], [0, 1], [0, '1', 0]]) {
+      assert.throws(() => body.applyImpulse(invalid), TypeError);
+    }
+    assert.deepEqual(Array.from(body.velocities), [1, 4, 2, 1, 4, 2, 1, 0, 2]);
+
+    assert.equal(world.step(), true);
+    assert.equal(body.positions[1], 0.5);
+    assert.equal(body.positions[4], 0.5);
+    assert.equal(body.positions[7], 0);
+    assert.equal(world.step(), true);
+    assert.equal(body.positions[1], 1);
+
+    world.reset();
+    assert.deepEqual(body.positions, before);
+    assert.ok(body.velocities.every((velocity) => velocity === 0));
+
+    world.dispose();
+    assert.throws(() => body.movableMass, /disposed/);
+    assert.throws(() => body.applyImpulse([0, 1, 0]), /disposed/);
+  } finally {
+    world.dispose();
+  }
+});
+
 test('box-only obstacle boundary rejects sphere and radius without changing registered geometry', () => {
   const world = new api.PhysicsWorld({ bounds: 100, gravity: [0, 0, 0] });
 

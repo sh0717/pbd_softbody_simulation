@@ -181,6 +181,25 @@
       return native.bodyRadius(this._ptr);
     }
 
+    get movableMass() {
+      this._check();
+
+      return native.bodyMovableMass(this._ptr);
+    }
+
+    applyImpulse(impulse) {
+      this._check();
+
+      if (!(Array.isArray(impulse) || ArrayBuffer.isView(impulse)) || impulse.length !== 3) {
+        throw new TypeError('Expected a finite impulse vec3');
+      }
+
+      const vector = [impulse[0], impulse[1], impulse[2]];
+      if (!vector.every(Number.isFinite)) throw new TypeError('Expected a finite impulse vec3');
+
+      native.bodyApplyImpulse(this._ptr, vector);
+    }
+
     get dragTarget() {
       return this._dragTarget;
     }

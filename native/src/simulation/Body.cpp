@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <utility>
 
 namespace
@@ -18,6 +19,39 @@ namespace
 		}
 
 		return true;
+	}
+
+	FOperationResult CalculateScaledMovableMass(const std::vector<double>& InverseMasses, double& OutScaledMass, double& OutMinimumInverseMass)
+	{
+		// 가장 작은 양의 역질량으로 각 입자 질량을 정규화해 1 이하인 항만 더합니다.
+		double MinimumInverseMass = std::numeric_limits<double>::infinity();
+		for (double InverseMassValue : InverseMasses)
+		{
+			if (!std::isfinite(InverseMassValue) || InverseMassValue < 0)
+			{
+				return {EErrorCode::InvalidArgument, "Invalid inverseMass"};
+			}
+			if (InverseMassValue > 0)
+			{
+				MinimumInverseMass = std::min(MinimumInverseMass, InverseMassValue);
+			}
+		}
+
+		OutScaledMass = 0;
+		OutMinimumInverseMass = 1;
+		if (std::isfinite(MinimumInverseMass))
+		{
+			for (double InverseMassValue : InverseMasses)
+			{
+				if (InverseMassValue > 0)
+				{
+					OutScaledMass += MinimumInverseMass / InverseMassValue;
+				}
+			}
+			OutMinimumInverseMass = MinimumInverseMass;
+		}
+
+		return {};
 	}
 } // namespace
 
@@ -135,6 +169,61 @@ FOperationResult FBody::SetParticleInverseMass(std::size_t ParticleIndex, double
 
 	InverseMass[ParticleIndex] = InInverseMass;
 
+	return {};
+}
+
+FOperationResult FBody::GetMovableMass(double& OutMass) const
+{
+	double ScaledMass = 0;
+	double MinimumInverseMass = 0;
+	const FOperationResult Result = CalculateScaledMovableMass(InverseMass, ScaledMass, MinimumInverseMass);
+	if (!Result)
+	{
+		return Result;
+	}
+
+	const double MovableMass = ScaledMass / MinimumInverseMass;
+	if (!std::isfinite(MovableMass))
+	{
+		return {EErrorCode::OutOfRange, "Movable mass exceeds the finite range"};
+	}
+
+	OutMass = MovableMass;
+	return {};
+}
+
+FOperationResult FBody::ApplyImpulse(const FVector3D& Impulse)
+{
+	if (!Impulse.IsFinite())
+	{
+		return {EErrorCode::InvalidArgument, "Expected a finite impulse vec3"};
+	}
+
+	double ScaledMass = 0;
+	double MinimumInverseMass = 0;
+	const FOperationResult Result = CalculateScaledMovableMass(InverseMass, ScaledMass, MinimumInverseMass);
+	if (!Result || ScaledMass == 0)
+	{
+		return Result;
+	}
+
+	// Δv = J / M입니다. 스케일이 1 이하이면 질량 나눗셈을 먼저 적용해 미소 역질량을 보존합니다.
+	const FVector3D VelocityDelta = MinimumInverseMass <= 1 ? (Impulse / ScaledMass) * MinimumInverseMass : Impulse * (MinimumInverseMass / ScaledMass);
+	for (std::uint32_t ParticleIndex = 0; ParticleIndex < GetVertexCount(); ++ParticleIndex)
+	{
+		if (InverseMass[ParticleIndex] > 0 && !(ReadParticleVector(Velocities, ParticleIndex) + VelocityDelta).IsFinite())
+		{
+			return {EErrorCode::OutOfRange, "Impulse would produce a non-finite velocity"};
+		}
+	}
+
+	for (std::uint32_t ParticleIndex = 0; ParticleIndex < GetVertexCount(); ++ParticleIndex)
+	{
+		if (InverseMass[ParticleIndex] > 0)
+		{
+			AddParticleVector(Velocities, ParticleIndex, VelocityDelta);
+		}
+	}
 	return {};
 }
 

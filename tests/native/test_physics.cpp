@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <string>
 
 namespace
@@ -55,6 +56,59 @@ int main()
 	{
 		Near(CalculateSignedTetrahedronVolume(Tetra()), 1.0 / 6);
 		Near(CalculateSignedTetrahedronVolume(Tetra(), 0, 2, 1, 3), -1.0 / 6);
+	}},
+		{"body impulse adds momentum to movable particles only",
+			[]
+	{
+		FPhysicsWorld World;
+		Setup(World);
+		FSoftBody* Body = World.AddSoft(Tetra(), {}, {}, {}, {}, {1, 0.5, 1, 0}, {1, 0, 2});
+		Require(Body != nullptr, "failed to create body");
+
+		double MovableMass = 0;
+		Require(Body->GetMovableMass(MovableMass).IsSuccess(), "failed to read movable mass");
+		Near(MovableMass, 4);
+		const std::vector<double> Before = Body->GetPositions();
+		Require(Body->ApplyImpulse({0, 12, 0}).IsSuccess(), "failed to apply impulse");
+		const FVector3D MovedVelocity{1, 3, 2};
+		const FVector3D FixedVelocity{1, 0, 2};
+		for (std::uint32_t VertexIndex = 0; VertexIndex < 3; ++VertexIndex)
+		{
+			Require(ReadParticleVector(Body->GetVelocities(), VertexIndex) == MovedVelocity, "incorrect impulse velocity");
+		}
+		Require(ReadParticleVector(Body->GetVelocities(), 3) == FixedVelocity, "impulse changed fixed particle velocity");
+		Require(!World.Step(0) && Body->GetPositions() == Before, "zero timestep changed positions");
+
+		Require(World.Step(0.1), "failed to advance after impulse");
+		Near(Body->GetPositions()[1], 0.3);
+		Near(Body->GetPositions()[10], Before[10]);
+		Require(World.Step(0.1), "failed to advance second step");
+		Near(Body->GetPositions()[1], 0.6);
+
+		World.Reset();
+		Require(Body->GetPositions() == Before && Body->GetVelocities() == std::vector<double>(12), "reset retained impulse state");
+	}},
+		{"invalid impulse preserves every particle velocity",
+			[]
+	{
+		FSoftBody Body(Tetra(), {}, {}, {}, {}, {1, 1, 1, 0});
+		const double Maximum = std::numeric_limits<double>::max();
+		Body.SetParticleVelocity(2, {0, Maximum, 0});
+		const std::vector<double> Before = Body.GetVelocities();
+
+		Require(Body.ApplyImpulse({0, std::numeric_limits<double>::infinity(), 0}).Code == EErrorCode::InvalidArgument, "nonfinite impulse not rejected");
+		Require(Body.ApplyImpulse({0, Maximum, 0}).Code == EErrorCode::OutOfRange, "overflowing velocity not rejected");
+		Require(Body.GetVelocities() == Before, "failed impulse changed particle velocities");
+
+		FBall FixedBall(1, {}, {}, 0);
+		double MovableMass = 1;
+		Require(FixedBall.GetMovableMass(MovableMass).IsSuccess() && MovableMass == 0, "fixed body has nonzero movable mass");
+		Require(FixedBall.ApplyImpulse({0, 12, 0}).IsSuccess() && FixedBall.GetVelocities()[1] == 0, "impulse moved fully fixed body");
+
+		FBall HeavyBall(1, {}, {}, 1E-309);
+		Require(HeavyBall.GetMovableMass(MovableMass).Code == EErrorCode::OutOfRange && MovableMass == 0, "unrepresentable mass did not preserve output");
+		Require(HeavyBall.ApplyImpulse({0, 1E308, 0}).IsSuccess(), "representable velocity rejected for heavy body");
+		Near(HeavyBall.GetVelocities()[1], 0.1);
 	}},
 		{"pinned tetra repairs inversion",
 			[]

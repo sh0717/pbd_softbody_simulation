@@ -11,6 +11,7 @@ export class ControlPanel {
     this.actions = actions;
     this.getState = getState;
     this.obstacleLimits = obstacleLimits;
+    this.impulseShortcuts = new Map();
     this.$ = (id) => document.getElementById(id);
     this.events = new AbortController();
     this.on = (id, type, callback) =>
@@ -59,6 +60,18 @@ export class ControlPanel {
         this.actions.setBumperStrength(Math.max(0, Math.min(12, Number(event.target.value) || 0))),
       );
       this.on('remove-obstacle', 'click', this.actions.removeObstacle);
+
+      for (const button of this.$('impulseControls').querySelectorAll(
+        'button[data-impulse-direction]',
+      )) {
+        const direction = button.dataset.impulseDirection;
+        const shortcut = button.getAttribute('aria-keyshortcuts').toLowerCase();
+
+        this.impulseShortcuts.set(shortcut, direction);
+        button.addEventListener('click', () => this.actions.applyImpulse(direction), {
+          signal: this.events.signal,
+        });
+      }
 
       for (const name of ['position-x', 'position-y', 'position-z', 'size-x', 'size-y', 'size-z']) {
         for (const suffix of ['', '-number'])
@@ -113,6 +126,15 @@ export class ControlPanel {
       return;
 
     const key = event.key.toLowerCase();
+    const physicalKey = event.code?.startsWith('Key') ? event.code.slice(3).toLowerCase() : '';
+    // 영문 배열에서는 입력 문자를 따르고, 한글 입력 등에서는 물리 키 위치를 사용합니다.
+    const direction = this.impulseShortcuts.get(/^[a-z]$/.test(key) ? key : physicalKey);
+
+    if (direction) {
+      event.preventDefault();
+      this.actions.applyImpulse(direction);
+      return;
+    }
 
     if (key === ' ' && event.target?.closest?.('button, a, summary, [role="button"]')) return;
 
@@ -155,7 +177,10 @@ export class ControlPanel {
   updateFullscreen() {
     const expanded = document.fullscreenElement === this.focusStage;
 
-    this.focusButton.textContent = expanded ? '전체 화면 종료' : '전체 화면';
+    const label = expanded ? '전체 화면 종료' : '전체 화면';
+
+    this.focusButton.setAttribute('aria-label', label);
+    this.focusButton.title = `${label} (F)`;
     this.focusButton.setAttribute('aria-pressed', String(expanded));
   }
 

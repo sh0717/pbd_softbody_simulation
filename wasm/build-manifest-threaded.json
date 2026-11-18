@@ -53,7 +53,7 @@
     "-Wno-error=pthreads-mem-growth"
   ],
   "sourceHashes": {
-    "native/bindings/Bindings.cpp": "73e4a34521ff80d62f2984a1e3027e606c62cf0c225e3d90ea9a5ae661a1b43e",
+    "native/bindings/Bindings.cpp": "4cf55c868c57fee3b6743ab3677bf0646a8e8ffdb1ec011be507da079f8a3cd4",
     "native/bindings/ContactSession.h": "476b4b4c63700697b999783238e5efe5c8a9dc70d153944b63d23cca78a26664",
     "native/bindings/OwnerRegistry.h": "8cbd8a9f60edc4805ff08e5aebe3f4f0afe4239857f10c07995ffc21ec2f67c3",
     "native/sources.txt": "ab67f154d0b716c2aa492905b10683bbde8f3011665502ea27de82bdab62e157",
@@ -85,8 +85,8 @@
     "native/src/core/Vector3D.h": "91959a7b6fd4b712329bbbec99f8514118c2b9773169118c0e93b01479e37f72",
     "native/src/simulation/Ball.cpp": "d3a205e221ed35f847a27d98fafc88ad3d02958f510d146ba808d1c4405c313a",
     "native/src/simulation/Ball.h": "11788a5899b3de18ec6f93a3b2f6769236c59a919d2e318b69ad8f64aba50ea2",
-    "native/src/simulation/Body.cpp": "08b433bb78d53284b0d9bc86f65b0747cea23522a64d3174f964dc8def40450a",
-    "native/src/simulation/Body.h": "8a9e5ce75adeeae49f946a764d17cea7164530234bad5eeeb54660d3eb070fe1",
+    "native/src/simulation/Body.cpp": "fd11053c5d2e109ca2eb4f1e227615d424e05b5717549e42ac50408966c3f592",
+    "native/src/simulation/Body.h": "c86d0d6def28a95bc2e0602035d9c9b89f533fa96736173400532c6ab1d36895",
     "native/src/simulation/ConstraintSolver.cpp": "8ebcf39222f4cb260252fb0f290ed78148e7bc2ed9e791d4b60f9a1d3c74b74a",
     "native/src/simulation/ConstraintSolver.h": "5deeadfa3ea291f551af1b88070bb908da50746ab6238f4a85a101a88d3a6740",
     "native/src/simulation/ParallelExecutor.cpp": "43036893c704f0451d2a45140beeb6b606995dc090077108f292031e619c2349",
@@ -101,6 +101,6 @@
   },
   "outputHashes": {
     "wasm/pbd_core_threaded.js": "657b24bb52cb89cf0ffe099b84683a2296eaf58663c7f76b7850e43376ee2a22",
-    "wasm/pbd_core_threaded.wasm": "d458dc89c126984559e7d2308888edc965cf0448df18316a45c502a61083a9d6"
+    "wasm/pbd_core_threaded.wasm": "b01e81f007bcf80d853b9d45c5d5517943603fb833aa44c9eb564756f4e5e8b5"
   }
 }

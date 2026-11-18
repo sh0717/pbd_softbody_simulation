@@ -1,6 +1,15 @@
 const SOFT_COLORS = [0x76dfbe, 0x78b1e2, 0xafa0e7, 0xe5b487];
 const MAX_BODIES_PER_KIND = 10;
 const MAX_OBSTACLES = 10;
+const IMPULSE_SPEED_GAIN = 7;
+const IMPULSE_DIRECTIONS = {
+  up: [0, 1, 0],
+  down: [0, -1, 0],
+  left: [-1, 0, 0],
+  right: [1, 0, 0],
+  forward: [0, 0, 1],
+  backward: [0, 0, -1],
+};
 const DEMO_POSES = {
   drop: {
     softCenters: [
@@ -53,6 +62,7 @@ export class ExperimentController {
       'selectObstacle',
       'setMode',
       'setRunning',
+      'applyImpulse',
       'setMaterial',
       'restart',
       'loadPreset',
@@ -294,6 +304,26 @@ export class ExperimentController {
     this.finishCommittedChange(() => {
       this.onTimingReset();
       this.ui.updateRunning();
+    });
+  }
+
+  applyImpulse(direction) {
+    this.assertAlive();
+
+    if (!Object.hasOwn(IMPULSE_DIRECTIONS, direction))
+      throw new RangeError('알 수 없는 충격량 방향입니다.');
+
+    const axis = IMPULSE_DIRECTIONS[direction];
+    const targets = this.selectedBody ? [this.selectedBody] : this.world.bodies;
+
+    this.finishCommittedChange(() => {
+      if (this.selectedBody) this.picking.endDrag();
+
+      // 질량이 다른 토끼와 공에 같은 속도 변화를 주도록 충격량을 계산합니다.
+      for (const body of targets) {
+        const magnitude = body.movableMass * IMPULSE_SPEED_GAIN;
+        body.applyImpulse(axis.map((component) => component * magnitude));
+      }
     });
   }
 

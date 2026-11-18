@@ -16,7 +16,7 @@ class FBumperSystem;
 // 외부에서 원소를 편집하면 UpdateBounds나 프레임 갱신 전까지 경계가 이전 값일 수 있습니다.
 // 여기의 const는 C++ 읽기 계약입니다. 호환 Wasm TypedArray는 쓰기 가능한 뷰이며
 // 네이티브 저장소의 주소 안정성과 JS ArrayBuffer의 성장·분리 조건은 별개입니다.
-// 호스트는 재진입 없이 호출을 직렬화하며 배열 내용은 스텝·초기화·이동 시 변경됩니다.
+// 호스트는 재진입 없이 호출을 직렬화하며 배열 내용은 스텝과 편집 명령에서 변경됩니다.
 class FBody
 {
 public:
@@ -97,6 +97,20 @@ public:
 	 * @note 0은 고정 입자입니다. 실패 시 기존 저장소를 보존합니다.
 	 */
 	FOperationResult SetParticleInverseMass(std::size_t ParticleIndex, double InInverseMass);
+
+	/**
+	 * 현재 역질량으로부터 움직일 수 있는 입자의 총질량을 구합니다. 모두 고정되어 있으면 0입니다.
+	 * @param OutMass 장면 질량 단위의 합입니다. 유한한 범위를 넘으면 값을 변경하지 않고 오류를 반환합니다.
+	 */
+	FOperationResult GetMovableMass(double& OutMass) const;
+
+	/**
+	 * 충격량을 질량에 비례해 배분하여 움직일 수 있는 모든 입자에 같은 속도 변화량을 더합니다.
+	 * @param Impulse 월드 XYZ 축 기준의 총충격량입니다(장면 질량 × 길이/초).
+	 * @note 위치와 고정 입자는 변경하지 않습니다. 다음 적분부터 속도가 위치에 반영됩니다.
+	 * @note 입력 또는 결과 속도가 유한하지 않으면 기존 상태를 보존합니다.
+	 */
+	FOperationResult ApplyImpulse(const FVector3D& Impulse);
 
 	const std::vector<double>& GetPositions() const noexcept
 	{
