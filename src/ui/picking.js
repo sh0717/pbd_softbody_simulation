@@ -18,13 +18,13 @@ export class PickingController {
     this.dragPoint = new this.THREE.Vector3();
     this.dragOffset = new this.THREE.Vector3();
     this.events = new AbortController();
-    this.dragging = false;
+    this.activePointerId = null;
 
     try {
       this.renderer.domElement.addEventListener(
         'pointerdown',
         (event) => {
-          if (event.button !== 0) return;
+          if (this.activePointerId !== null || !event.isPrimary || event.button !== 0) return;
 
           this.pointerCoordinates(event);
 
@@ -53,9 +53,11 @@ export class PickingController {
             : this.selection.body.center;
 
           this.dragOffset.fromArray(center).sub(hit.point);
-          this.dragging = true;
+          const canvas = this.renderer.domElement;
+          canvas.setPointerCapture(event.pointerId);
+          this.activePointerId = event.pointerId;
+          canvas.setAttribute('data-dragging', '');
           this.controls.enabled = false;
-          this.renderer.domElement.setPointerCapture(event.pointerId);
           event.stopImmediatePropagation();
         },
         { capture: true, signal: this.events.signal },
@@ -63,7 +65,7 @@ export class PickingController {
       this.renderer.domElement.addEventListener(
         'pointermove',
         (event) => {
-          if (!this.dragging) return;
+          if (this.activePointerId !== event.pointerId) return;
 
           this.pointerCoordinates(event);
 
@@ -86,7 +88,9 @@ export class PickingController {
       for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) {
         this.renderer.domElement.addEventListener(
           event,
-          (eventObject) => this.releasePointer(eventObject),
+          (eventObject) => {
+            if (this.activePointerId === eventObject.pointerId) this.endDrag();
+          },
           { signal: this.events.signal },
         );
       }
@@ -110,23 +114,26 @@ export class PickingController {
   }
 
   endDrag() {
-    this.dragging = false;
+    const pointerId = this.activePointerId;
+
+    if (pointerId === null) return;
+
+    const canvas = this.renderer.domElement;
+
+    this.activePointerId = null;
+    canvas.removeAttribute('data-dragging');
     this.controls.enabled = true;
+
+    if (canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
+
     this.selection.setDragTarget(null);
-  }
-
-  releasePointer(event) {
-    this.endDrag();
-
-    if (this.renderer.domElement.hasPointerCapture(event.pointerId))
-      this.renderer.domElement.releasePointerCapture(event.pointerId);
   }
 
   dispose() {
     if (this.disposed) return;
 
     this.disposed = true;
-    this.endDrag();
     this.events.abort();
+    this.endDrag();
   }
 }

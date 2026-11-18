@@ -477,6 +477,32 @@ namespace
 		}
 	}
 
+	void CheckConstraintBodiesAddedBetweenSteps()
+	{
+		FPhysicsWorld World(3);
+		FSettings Settings;
+		Settings.bXpbd = false;
+		Settings.Substeps = 1;
+		Require(World.Configure(Settings).IsSuccess(), "could not configure the constraint body test");
+
+		Require(World.AddSoft({-5, 0, 0, -4, 0, 0}, {0, 1}, {}, {}) != nullptr, "could not add the initial soft body");
+		Require(World.Step(0.25), "initial step failed");
+
+		FBall* Ball = World.AddBall(0.25, {}, {0, 1, 0});
+		FSoftBody* SoftBody = World.AddSoft({4, 0, 0, 5, 0, 0}, {0, 1}, {}, {}, {}, {0, 1});
+		Require(Ball != nullptr && SoftBody != nullptr, "could not add bodies between steps");
+		Require(SoftBody->SetParticlePosition(1, {6, 0, 0}).IsSuccess(), "could not stretch the new soft body edge");
+
+		FOperationResult Status;
+		Require(!World.Step(0, &Status) && Status.IsSuccess(), "zero dt did not return as a valid no-op");
+		Require(!World.Step(-1, &Status) && Status.Code == EErrorCode::OutOfRange, "negative dt was not rejected");
+		Require(ReadParticleVector(SoftBody->GetPositions(), 1) == FVector3D{6, 0, 0}, "zero or invalid dt projected the edge");
+
+		Require(World.Step(0.25), "step after adding bodies failed");
+		Require(ReadParticleVector(SoftBody->GetPositions(), 1) == FVector3D{5, 0, 0}, "new soft body did not receive edge projection");
+		Require(Ball->GetCenter() == FVector3D{0, 0.25, 0}, "ball did not advance with the updated constraint body list");
+	}
+
 	void Benchmark()
 	{
 		for (std::size_t WorkerCount : {std::size_t{0}, std::size_t{3}})
@@ -520,6 +546,7 @@ int main(int ArgCount, char** Arguments)
 	CheckFixedRanges();
 	CheckDynamicIndices();
 	CheckWorlds();
+	CheckConstraintBodiesAddedBetweenSteps();
 	std::cout << "Parallel overlap, exact PBD/XPBD equivalence, task statuses and lifetimes passed.\n";
 
 	if (ArgCount > 1 && std::string(Arguments[1]) == "--benchmark")

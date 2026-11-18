@@ -53,14 +53,14 @@
     "-Wno-error=pthreads-mem-growth"
   ],
   "sourceHashes": {
-    "native/bindings/Bindings.cpp": "e426f6e6d0a5e6e8b6e9d1f41a3efbdbeb480f0c1e570554300f399ba3e28e5b",
+    "native/bindings/Bindings.cpp": "73e4a34521ff80d62f2984a1e3027e606c62cf0c225e3d90ea9a5ae661a1b43e",
     "native/bindings/ContactSession.h": "476b4b4c63700697b999783238e5efe5c8a9dc70d153944b63d23cca78a26664",
     "native/bindings/OwnerRegistry.h": "8cbd8a9f60edc4805ff08e5aebe3f4f0afe4239857f10c07995ffc21ec2f67c3",
     "native/sources.txt": "ab67f154d0b716c2aa492905b10683bbde8f3011665502ea27de82bdab62e157",
     "native/src/collision/BumperSystem.cpp": "01ea4899425ab4bd18686f5ed7bdeaf11a402b71aecfd9117b6efdc1b42c99c5",
     "native/src/collision/BumperSystem.h": "2745f96a0ad4319903cead537b6adb94fc7182d1e2fa056a12fbc49cd2f87cb7",
-    "native/src/collision/CollisionSolver.cpp": "7901ba1b3a6dfd1dbc2c8bc897ed44fe238f138544c319e4734d68477810ff07",
-    "native/src/collision/CollisionSolver.h": "445f5694c3f77958c276e58c29191c7db4819555f5f6bb0d9048bc7360205e56",
+    "native/src/collision/CollisionSolver.cpp": "d189986c7e680b836a998df26d86715cd306df78c3a40c3063bd91a6b97b2272",
+    "native/src/collision/CollisionSolver.h": "4f6a28c5da8f6252bc082650f3684c66f86c951ec9fc1be2e72cad6cb54873a5",
     "native/src/collision/Contact.h": "6f95db30dea2ee4914906da74ce698ac3575776cca7193cfb187cb1854e0ceb3",
     "native/src/collision/SoftContactSolver.cpp": "dd01afbdb03f93956bff14064d447ae96bada20cc02c25cc2bce77bf8c21907a",
     "native/src/collision/SoftContactSolver.h": "3702dc2a3816f2ce9ddf6b10dc398d34b4aee15046cd697f54074f503303239c",
@@ -91,8 +91,8 @@
     "native/src/simulation/ConstraintSolver.h": "5deeadfa3ea291f551af1b88070bb908da50746ab6238f4a85a101a88d3a6740",
     "native/src/simulation/ParallelExecutor.cpp": "43036893c704f0451d2a45140beeb6b606995dc090077108f292031e619c2349",
     "native/src/simulation/ParallelExecutor.h": "6fc22241e9bbbfa30a12a049f8d9af4cc08190131877e404c4e506cd92d2843d",
-    "native/src/simulation/PhysicsWorld.cpp": "bf4f97396998365608b2a5f7f3a2b0a2a1a6d2f4f6d488e41ed2098960c1f1d4",
-    "native/src/simulation/PhysicsWorld.h": "c2842c03dd570fbb957082ae2c28ded848441a7545cfa91b0f29adf6adfeb542",
+    "native/src/simulation/PhysicsWorld.cpp": "2e204134f2255d1b6bcb2ed2926a312ade329f3d2d4c4eb9944b11940918f731",
+    "native/src/simulation/PhysicsWorld.h": "65f79b6d7136abbaa4d52ff38747a862379c401ba409b559e1886f96e9c126b4",
     "native/src/simulation/SoftBody.cpp": "cdd0d9f6b4aae10e61eecc44044d546f7b90054aaea23329f8b3ba594b4c8822",
     "native/src/simulation/SoftBody.h": "3a8e68944b42196312cbfb246e1561d2a0bb4b2d1c62377a1903c74bc23ae607",
     "native/src/simulation/TimeIntegrator.cpp": "fd246f369de99efd02faa3899a286daf4942bfd666d9d3730f7e38c44366492b",
@@ -101,6 +101,6 @@
   },
   "outputHashes": {
     "wasm/pbd_core_threaded.js": "657b24bb52cb89cf0ffe099b84683a2296eaf58663c7f76b7850e43376ee2a22",
-    "wasm/pbd_core_threaded.wasm": "f772ee5715acb47b6db9f4c6e0cd4cdae9aaeb275e5e293fae418be3770cc011"
+    "wasm/pbd_core_threaded.wasm": "d458dc89c126984559e7d2308888edc965cf0448df18316a45c502a61083a9d6"
   }
 }

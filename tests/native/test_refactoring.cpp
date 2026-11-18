@@ -1034,6 +1034,45 @@ namespace
 		Require(StatsValues(Solver.GetStats()) == StatsValues(FSoftContactStats{}), "empty preparation retained diagnostics from a previous batch");
 	}
 
+	void SoftPairsPreserveContactOrderAndUniqueParticipants()
+	{
+		FPhysicsWorld World;
+		FSoftBody* FirstSource = World.AddSoft({0.1, 0.2, 0.3}, {}, {}, {});
+		FSoftBody* SecondSource = World.AddSoft({10.1, 0.2, 0.3}, {}, {}, {});
+		FSoftBody* SecondTarget = World.AddSoft(Tetra(), {}, {0, 1, 2, 3}, {}, {10, 0, 0}, {0, 0, 0, 0});
+		FSoftBody* FirstTarget = World.AddSoft(Tetra(), {}, {0, 1, 2, 3}, {}, {}, {0, 0, 0, 0});
+		FSoftBody* ThirdSource = World.AddSoft({0.15, 0.2, 0.3}, {}, {}, {});
+		const std::array<FSoftBody*, 3> Sources{FirstSource, SecondSource, ThirdSource};
+		const std::array<FSoftBody*, 3> Targets{FirstTarget, SecondTarget, FirstTarget};
+		Require(FirstSource && SecondSource && ThirdSource && FirstTarget && SecondTarget, "could not create the soft pairs fixture");
+
+		FSoftContactSolver SoftContacts;
+		FCollisionSolver Collision;
+
+		for (int Repeat = 0; Repeat < 2; ++Repeat)
+		{
+			for (FSoftBody* Source : Sources)
+			{
+				Source->Reset();
+			}
+			Collision.BeginSubstep();
+
+			FSoftContactStats Stats;
+			const FOperationResult Result = Collision.SolveDynamic(World.GetBodies(), SoftContacts, Stats);
+			const std::vector<FContact>& Contacts = Collision.GetContacts();
+			Require(Result && Contacts.size() == Sources.size() && Stats.BroadPhasePairs == 3 && Stats.GeneratedContacts == 3, "separated groups or a shared participant lost a soft pair");
+
+			for (std::size_t Index = 0; Index < Sources.size(); ++Index)
+			{
+				Require(Contacts[Index].BodyA == Sources[Index] && Contacts[Index].BodyB == Targets[Index], "noncontiguous soft pairs changed contact order");
+			}
+
+			const std::optional<FContactBodyInfo> FirstInfo = SoftContacts.GetBodyInfo(FirstTarget);
+			const std::optional<FContactBodyInfo> SecondInfo = SoftContacts.GetBodyInfo(SecondTarget);
+			Require(FirstInfo && SecondInfo && Stats.HashCells == static_cast<double>(FirstInfo->HashCellCount + SecondInfo->HashCellCount), "shared target contributed cache diagnostics more than once");
+		}
+	}
+
 	void ScratchBatchesDoNotLeak()
 	{
 		FPhysicsWorld First;
@@ -1505,6 +1544,7 @@ int main()
 		{"soft-only contacts refresh edited bounds", SoftOnlyContactsRefreshEditedBounds},
 		{"configure atomicity independent diagnostics and prepare recovery", ConfigureAtomicityAndSnapshot},
 		{"prepare validates before publication and refits geometry with batch diagnostics", PreparePublishesCompleteCacheAndBatchDiagnostics},
+		{"soft pairs preserve contact order and unique participants", SoftPairsPreserveContactOrderAndUniqueParticipants},
 		{"warm scratch batches reject stale contacts and participants", ScratchBatchesDoNotLeak},
 		{"settle clears only moved particles in one body", SettlePreservesUnmovedParticles},
 		{"asymmetric soft bounds refit without stale extrema", AsymmetricSoftBoundsRefit},

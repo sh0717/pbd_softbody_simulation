@@ -36,6 +36,97 @@ const expectedErrors = [];
 const failedRequests = [];
 const failedResponses = [];
 
+function observePage(target) {
+  target.on('pageerror', (error) => errors.push(error.message));
+  target.on('console', (message) => {
+    if (message.type() === 'error' && !message.location().url.endsWith('/favicon.ico')) {
+      if (expectedConsoleError && message.text().includes(expectedConsoleError))
+        expectedErrors.push(message.text());
+      else errors.push(message.text());
+    }
+  });
+  target.on('requestfailed', (request) => {
+    failedRequests.push({ url: request.url(), error: request.failure()?.errorText });
+  });
+  target.on('response', (response) => {
+    if (response.status() >= 400 && !response.url().endsWith('/favicon.ico'))
+      failedResponses.push({ url: response.url(), status: response.status() });
+  });
+}
+
+async function checkViewport(target) {
+  await target.waitForFunction(() => Boolean(window.softLab), undefined, { timeout: 60000 });
+
+  const layout = await target.evaluate(() => {
+    const canvas = document.querySelector('#viewport canvas').getBoundingClientRect();
+    const run = document.getElementById('run-button').getBoundingClientRect();
+
+    return {
+      width: document.documentElement.clientWidth,
+      height: innerHeight,
+      pageWidth: document.documentElement.scrollWidth,
+      canvasWidth: Math.round(canvas.width),
+      canvasHeight: Math.round(canvas.height),
+      canvasTop: Math.round(canvas.top),
+      playbackBottom: Math.round(run.bottom),
+    };
+  });
+
+  assert.ok(
+    layout.pageWidth <= layout.width,
+    'the workspace must fit without horizontal scrolling',
+  );
+  assert.ok(
+    layout.canvasWidth >= 280 && layout.canvasHeight >= 240,
+    'the 3D stage must remain usable',
+  );
+  assert.ok(layout.canvasTop < layout.height / 3, 'the 3D stage must appear near the top');
+  assert.ok(layout.playbackBottom <= layout.height, 'playback must remain reachable on first view');
+
+  return layout;
+}
+
+async function checkPointerDrag(target) {
+  const origin = await target.evaluate(() => {
+    const { camera, renderer, world } = window.softLab;
+    const position = Array.from(world.balls[0].center);
+    const point = new window.THREE.Vector3().fromArray(position).project(camera);
+    const canvas = renderer.domElement.getBoundingClientRect();
+
+    return {
+      x: canvas.left + ((point.x + 1) / 2) * canvas.width,
+      y: canvas.top + ((1 - point.y) / 2) * canvas.height,
+      position,
+    };
+  });
+
+  const canvas = target.locator('#viewport canvas');
+  await target.mouse.move(origin.x, origin.y);
+  await target.mouse.down();
+
+  try {
+    assert.equal(await canvas.getAttribute('data-dragging'), '');
+    await canvas.dispatchEvent('pointercancel', { pointerId: 999, pointerType: 'touch' });
+    assert.equal(
+      await canvas.getAttribute('data-dragging'),
+      '',
+      'a second pointer must not cancel the drag',
+    );
+    await target.mouse.move(origin.x + 40, origin.y + 12);
+
+    const position = await target.evaluate(() => Array.from(window.softLab.world.balls[0].center));
+    assert.notDeepEqual(position, origin.position, 'the primary pointer must still move the body');
+  } finally {
+    await target.mouse.up();
+  }
+
+  assert.equal(await canvas.getAttribute('data-dragging'), null);
+  assert.ok(
+    await target.evaluate(() => window.softLab.controls.enabled),
+    'release restores orbit controls',
+  );
+}
+
 async function readPageState() {
   if (!page || page.isClosed()) return null;
 
@@ -90,25 +181,10 @@ try {
   await mkdir(artifacts, { recursive: true });
   browser = await chromium.launch({ channel: 'chrome', headless: true, args: launchArgs });
   page = await browser.newPage({
-    viewport: { width: 1440, height: 1000 },
+    viewport: { width: 1440, height: 900 },
     deviceScaleFactor: 1,
   });
-  page.on('pageerror', (error) => errors.push(error.message));
-  page.on('console', (message) => {
-    if (message.type() === 'error' && !message.location().url.endsWith('/favicon.ico')) {
-      if (expectedConsoleError && message.text().includes(expectedConsoleError))
-        expectedErrors.push(message.text());
-      else errors.push(message.text());
-    }
-  });
-  page.on('requestfailed', (request) => {
-    failedRequests.push({ url: request.url(), error: request.failure()?.errorText });
-  });
-  page.on('response', (response) => {
-    if (response.status() >= 400 && !response.url().endsWith('/favicon.ico')) {
-      failedResponses.push({ url: response.url(), status: response.status() });
-    }
-  });
+  observePage(page);
 
   await page.goto(url, { waitUntil: 'networkidle' });
   await page.waitForFunction(
@@ -125,14 +201,51 @@ try {
     `initialization must succeed: ${JSON.stringify({ initialState, errors })}`,
   );
 
+  const viewports = { desktop: await checkViewport(page) };
   await page.screenshot({ path: path.join(artifacts, 'browser-desktop.png') });
+  await page.locator('#obstacle-list').selectOption({ index: 1 });
+  await page.locator('#obstacle-properties').waitFor({ state: 'visible' });
+  await page.locator('#remove-obstacle').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(artifacts, 'browser-inspector.png') });
+  await page.locator('#obstacle-list').selectOption({ index: 0 });
+  await checkPointerDrag(page);
+  await page.locator('#view-expand').click();
+  await page.waitForFunction(() => !!document.fullscreenElement);
+  await page.keyboard.press('f');
+  await page.waitForFunction(() => !document.fullscreenElement);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForFunction(() => Boolean(window.softLab), undefined, { timeout: 60000 });
+
+  for (const [name, width, height] of [
+    ['tablet', 834, 1112],
+    ['mobile', 390, 844],
+  ]) {
+    const responsive = await browser.newPage({
+      viewport: { width, height },
+      deviceScaleFactor: 1,
+      isMobile: true,
+      hasTouch: true,
+    });
+
+    try {
+      observePage(responsive);
+      await responsive.goto(url, { waitUntil: 'networkidle' });
+      viewports[name] = await checkViewport(responsive);
+      await responsive.screenshot({ path: path.join(artifacts, `browser-${name}.png`) });
+      await responsive.locator('#mode-pbd').tap();
+      assert.equal(await responsive.locator('#mode-pbd').getAttribute('aria-pressed'), 'true');
+    } finally {
+      await responsive.close();
+    }
+  }
+
   await page.addScriptTag({
     content: await readFile(path.join(root, 'tests/browser/checks.js'), 'utf8'),
   });
 
   const checks = await page.evaluate(() => window.runSoftLabChecks());
 
-  assert.equal(checks.passed, 26, 'run the complete UI regression suite');
+  assert.equal(checks.passed, 32, 'run the complete UI regression suite');
 
   const disposed = await page.evaluate(() => {
     const app = window.softLab;
@@ -260,6 +373,11 @@ try {
     browserVersion: browser.version(),
     launchArgs,
     initialState,
+    viewports,
+    interactionChecks: [
+      'Object drag survives an unrelated pointer and restores the orbit controls',
+      'Fullscreen can be entered from the toolbar and exited with F',
+    ],
     url,
     errors,
     failedRequests,

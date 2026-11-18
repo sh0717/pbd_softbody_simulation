@@ -1,6 +1,31 @@
-const SOFT_COLORS = [0xd76c43, 0xe0a86d, 0xbf6c59, 0xce925e];
+const SOFT_COLORS = [0x76dfbe, 0x78b1e2, 0xafa0e7, 0xe5b487];
 const MAX_BODIES_PER_KIND = 10;
 const MAX_OBSTACLES = 10;
+const DEMO_POSES = {
+  drop: {
+    softCenters: [
+      [-1.5, 3.2, 0],
+      [1.6, 4, 0.4],
+    ],
+    ballCenter: [4.8, 3, 3.6],
+    gravity: true,
+  },
+  collision: {
+    softCenters: [
+      [-0.45, 1.6, 0],
+      [0.45, 1.6, 0.2],
+    ],
+    ballCenter: [4.8, 3, 3.6],
+    gravity: false,
+  },
+  bumper: {
+    softCenters: [
+      [-5, 0.9, -2],
+      [5, 0.9, -2],
+    ],
+    gravity: true,
+  },
+};
 
 /** Owns selection and user commands. PhysicsWorld owns all physical state. */
 export class ExperimentController {
@@ -30,6 +55,7 @@ export class ExperimentController {
       'setRunning',
       'setMaterial',
       'restart',
+      'loadPreset',
       'setTimeStep',
       'setSubsteps',
       'setIterations',
@@ -132,7 +158,7 @@ export class ExperimentController {
     );
 
     this.finishCommittedChange(() => {
-      this.view.addBody(body, 0x668c99, false);
+      this.view.addBody(body, 0xf3be7a, false);
 
       if (this.world.obstacles.length) this.settle();
 
@@ -273,14 +299,62 @@ export class ExperimentController {
 
   restart() {
     this.assertAlive();
+    this.resetMotion();
+  }
+
+  resetMotion(stageBodies) {
     this.picking.endDrag();
     this.world.reset();
     this.finishCommittedChange(() => {
+      stageBodies?.();
       this.settle();
       this.onTimingReset();
       this.onRestart();
       this.view.resetFlashes();
     });
+  }
+
+  loadPreset(name) {
+    this.assertAlive();
+
+    if (!Object.hasOwn(DEMO_POSES, name)) throw new RangeError('알 수 없는 실험입니다.');
+
+    const pose = DEMO_POSES[name];
+    const [first, second] = this.world.softBodies;
+    const [ball] = this.world.balls;
+
+    if (!first || !second || !ball) return false;
+
+    const ballCenter = name === 'bumper' ? this.getBumperDropCenter(ball) : pose.ballCenter;
+
+    if (!ballCenter) return false;
+
+    // Replay starts from native rest poses and keeps the configured solver and box layout.
+    this.setRunning(false);
+    this.resetMotion(() => {
+      this.selectObstacle(null);
+      this.setGravity(pose.gravity);
+      this.ui.updateGravity();
+      this.world.moveBody(first, pose.softCenters[0]);
+      this.world.moveBody(second, pose.softCenters[1]);
+      this.world.moveBody(ball, ballCenter);
+    });
+
+    return true;
+  }
+
+  getBumperDropCenter(ball) {
+    for (const obstacle of this.world.obstacles) {
+      if (!obstacle.bumper || obstacle.bumperStrength <= 0) continue;
+
+      const [x, y, z] = obstacle.position;
+      const surface = y + obstacle.size[1] * 0.5;
+      const dropHeight = Math.min(2.2, this.world.bounds - 2 * ball.radius - surface);
+
+      if (dropHeight > 0.25) return [x, surface + ball.radius + dropHeight, z];
+    }
+
+    return null;
   }
 
   setTimeStep(value) {

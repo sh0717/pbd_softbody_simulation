@@ -186,7 +186,7 @@ async function appFixture({
   const errors = [];
   const nodes = new Map();
   const node = (id) => {
-    if (!nodes.has(id)) nodes.set(id, { hidden: true, addEventListener() {} });
+    if (!nodes.has(id)) nodes.set(id, { hidden: true, dataset: {}, addEventListener() {} });
 
     return nodes.get(id);
   };

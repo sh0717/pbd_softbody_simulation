@@ -21,6 +21,28 @@ namespace
 
 	using FNativeHandle = std::uintptr_t;
 
+	// physics.js와 직접 Wasm 호출자가 사용하는 필드 번호입니다.
+	enum class EBodyArrayField : unsigned
+	{
+		Positions = 0,
+		RestPositions = 1,
+		PreviousPositions = 2,
+		Velocities = 3,
+		PreSolveVelocities = 4,
+		InverseMass = 5,
+		EdgeIndices = 6,
+		TetIndices = 7,
+		SurfaceIndices = 8,
+		RestLengths = 9,
+		RestVolumes = 10,
+		EdgeLambdas = 11,
+		VolumeLambdas = 12,
+		TetLimits = 13,
+		Center = 14,
+		BoundsMin = 15,
+		BoundsMax = 16,
+	};
+
 	// 직렬 바인딩 호출의 오류 전달 슬롯입니다. 코어의 상태를 JS가 호출 반환 후 소비합니다.
 	FOperationResult BindingResult;
 
@@ -195,6 +217,38 @@ namespace
 	val BorrowMemoryView(const T& Values)
 	{
 		return val(emscripten::typed_memory_view(Values.size(), Values.data()));
+	}
+
+	val BorrowSoftBodyArray(const FBody& Body, EBodyArrayField Field)
+	{
+		const FSoftBody* Soft = dynamic_cast<const FSoftBody*>(&Body);
+
+		if (!Soft)
+		{
+			return val::undefined();
+		}
+
+		switch (Field)
+		{
+			case EBodyArrayField::EdgeIndices:
+				return BorrowMemoryView(Soft->GetEdgeIndices());
+			case EBodyArrayField::TetIndices:
+				return BorrowMemoryView(Soft->GetTetIndices());
+			case EBodyArrayField::SurfaceIndices:
+				return BorrowMemoryView(Soft->GetSurfaceIndices());
+			case EBodyArrayField::RestLengths:
+				return BorrowMemoryView(Soft->GetRestLengths());
+			case EBodyArrayField::RestVolumes:
+				return BorrowMemoryView(Soft->GetRestVolumes());
+			case EBodyArrayField::EdgeLambdas:
+				return BorrowMemoryView(Soft->GetEdgeLambdas());
+			case EBodyArrayField::VolumeLambdas:
+				return BorrowMemoryView(Soft->GetVolumeLambdas());
+			case EBodyArrayField::TetLimits:
+				return BorrowMemoryView(Soft->GetTetLimits());
+			default:
+				return val::undefined();
+		}
 	}
 
 	std::vector<double> ReadDoubleArray(const val& Values)
@@ -422,59 +476,37 @@ EMSCRIPTEN_BINDINGS(pbd_core)
 
 	RegisterFunction<+[](FNativeHandle BodyHandle, unsigned Field) -> val
 	{
-		FBody* Body = ResolveHandle<FBody>(BodyHandle);
+		const FBody* Body = ResolveHandle<FBody>(BodyHandle);
 
 		if (!Body)
 		{
 			return val::undefined();
 		}
 
-		FBody& BodyState = *Body;
-		FSoftBody* SoftBodyPtr = dynamic_cast<FSoftBody*>(&BodyState);
+		const EBodyArrayField ArrayField = static_cast<EBodyArrayField>(Field);
 
-		if (Field >= 6 && Field <= 13 && !SoftBodyPtr)
+		switch (ArrayField)
 		{
-			return val::undefined();
-		}
-
-		switch (Field)
-		{
-			case 0:
-				return BorrowMemoryView(BodyState.GetPositions());
-			case 1:
-				return BorrowMemoryView(BodyState.GetRestPositions());
-			case 2:
-				return BorrowMemoryView(BodyState.GetPreviousPositions());
-			case 3:
-				return BorrowMemoryView(BodyState.GetVelocities());
-			case 4:
-				return BorrowMemoryView(BodyState.GetPreSolveVelocities());
-			case 5:
-				return BorrowMemoryView(BodyState.GetInverseMass());
-			case 6:
-				return BorrowMemoryView(SoftBodyPtr->GetEdgeIndices());
-			case 7:
-				return BorrowMemoryView(SoftBodyPtr->GetTetIndices());
-			case 8:
-				return BorrowMemoryView(SoftBodyPtr->GetSurfaceIndices());
-			case 9:
-				return BorrowMemoryView(SoftBodyPtr->GetRestLengths());
-			case 10:
-				return BorrowMemoryView(SoftBodyPtr->GetRestVolumes());
-			case 11:
-				return BorrowMemoryView(SoftBodyPtr->GetEdgeLambdas());
-			case 12:
-				return BorrowMemoryView(SoftBodyPtr->GetVolumeLambdas());
-			case 13:
-				return BorrowMemoryView(SoftBodyPtr->GetTetLimits());
-			case 14:
-				return BodyState.IsSoft() ? BorrowMemoryView(BodyState.GetCenter()) : BorrowMemoryView(BodyState.GetPositions());
-			case 15:
-				return BorrowMemoryView(BodyState.GetBoundsMin());
-			case 16:
-				return BorrowMemoryView(BodyState.GetBoundsMax());
+			case EBodyArrayField::Positions:
+				return BorrowMemoryView(Body->GetPositions());
+			case EBodyArrayField::RestPositions:
+				return BorrowMemoryView(Body->GetRestPositions());
+			case EBodyArrayField::PreviousPositions:
+				return BorrowMemoryView(Body->GetPreviousPositions());
+			case EBodyArrayField::Velocities:
+				return BorrowMemoryView(Body->GetVelocities());
+			case EBodyArrayField::PreSolveVelocities:
+				return BorrowMemoryView(Body->GetPreSolveVelocities());
+			case EBodyArrayField::InverseMass:
+				return BorrowMemoryView(Body->GetInverseMass());
+			case EBodyArrayField::Center:
+				return Body->IsSoft() ? BorrowMemoryView(Body->GetCenter()) : BorrowMemoryView(Body->GetPositions());
+			case EBodyArrayField::BoundsMin:
+				return BorrowMemoryView(Body->GetBoundsMin());
+			case EBodyArrayField::BoundsMax:
+				return BorrowMemoryView(Body->GetBoundsMax());
 			default:
-				return val::undefined();
+				return BorrowSoftBodyArray(*Body, ArrayField);
 		}
 	}>("bodyArray");
 
@@ -694,7 +726,8 @@ EMSCRIPTEN_BINDINGS(pbd_core)
 	{
 		const std::vector<double> Positions = ReadDoubleArray(Values);
 
-		if (std::size_t(std::max({VertexA, VertexB, VertexC, VertexD})) * 3 + 2 >= Positions.size())
+		// Wasm32에서도 XYZ 오프셋을 곱하기 전에 정점 범위를 검증합니다.
+		if (std::max({VertexA, VertexB, VertexC, VertexD}) >= Positions.size() / 3)
 		{
 			RecordOperationResult({EErrorCode::InvalidArgument, "Invalid tetrahedron indices"});
 			return 0;

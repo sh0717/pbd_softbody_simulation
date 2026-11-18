@@ -83,8 +83,8 @@ async function start() {
 
   mainWindow = new BrowserWindow({
     width: 1440,
-    height: 1000,
-    minWidth: 840,
+    height: 900,
+    minWidth: 420,
     minHeight: 640,
     useContentSize: true,
     title: config.productName,

@@ -93,6 +93,17 @@ bool FPhysicsWorld::Step(double Dt, FOperationResult* OutResult)
 		return false;
 	}
 
+	// 몸체 집합은 Step 동안 고정되므로 모든 서브스텝과 반복에서 같은 연체 목록을 사용합니다.
+	ConstraintBodies.clear();
+
+	for (const std::unique_ptr<FBody>& Body : Bodies)
+	{
+		if (Body->IsSoft())
+		{
+			ConstraintBodies.push_back(static_cast<FSoftBody*>(Body.get()));
+		}
+	}
+
 	Stats = {};
 	Bumpers.BeginFrame();
 
@@ -140,16 +151,6 @@ FOperationResult FPhysicsWorld::AdvanceSubstep(double SubstepSeconds)
 
 FOperationResult FPhysicsWorld::SolveIteration(double SubstepSeconds)
 {
-	ConstraintBodies.clear();
-
-	for (const std::unique_ptr<FBody>& Body : Bodies)
-	{
-		if (Body->IsSoft())
-		{
-			ConstraintBodies.push_back(static_cast<FSoftBody*>(Body.get()));
-		}
-	}
-
 	// 몸체 인덱스를 고정 연속 구간으로 나누므로 계산 중 다음 인덱스를 얻기 위한 잠금이 없습니다.
 	ConstraintExecutor.Run(ConstraintBodies.size(), [this, SubstepSeconds](std::size_t BodyIndex) noexcept
 	{

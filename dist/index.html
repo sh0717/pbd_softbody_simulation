@@ -1,109 +1,365 @@
 <!doctype html>
 <html lang="ko">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#fafbf7">
-  <link rel="icon" href="data:,"><title>Soft / Lab — PBD & XPBD</title>
-  <link rel="stylesheet" href="styles.css">
-  <script defer src="vendor/three.min.js"></script>
-  <script defer src="vendor/OrbitControls.js"></script>
-  <script defer src="data/bunny-data.js"></script>
-  <script defer src="wasm/pbd_core.js"></script>
-  <script defer src="simulation/physics.js"></script>
-  <script defer src="app.js"></script>
-</head>
-<body>
-  <header>
-    <div class="brand"><span class="brand-mark" aria-hidden="true">∿</span><div><h1>Soft / Lab</h1><span class="eyebrow">A study in motion & matter</span></div></div>
-    <span class="header-note">Position Based Dynamics · Interactive playground</span>
-  </header>
-
-  <main class="workspace">
-    <section class="stage" aria-label="3D 시뮬레이션">
-      <div id="viewport"></div>
-      <div class="stage-heading"><span class="eyebrow">01 / Soft body experiment</span><h2>형태가 움직이는 순간.</h2><p>물체를 선택하고 끌어 움직여 보세요.</p></div>
-      <span class="stage-badge" id="mode-badge">XPBD SOLVER</span>
-
-      <div id="error-banner" role="alert" hidden></div>
-
-      <div class="stage-footer">
-        <div class="transport" aria-label="시뮬레이션 조작">
-          <button id="run-button" aria-pressed="false">▶ 실행</button>
-          <button id="restart-button" title="장애물을 유지하고 물체를 초기화합니다">↺ 초기화</button>
-          <span class="separator"></span>
-          <button id="add-soft">+ 토끼</button><button id="add-ball">+ 구</button>
-          <button id="camera-reset" title="카메라를 처음 위치로 되돌립니다">뷰 복원</button>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b1118" />
+    <link rel="icon" href="data:,"><title>Soft / Lab — PBD & XPBD</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="vendor/three.min.js"></script>
+    <script defer src="vendor/OrbitControls.js"></script>
+    <script defer src="data/bunny-data.js"></script>
+    <script defer src="wasm/pbd_core.js"></script>
+    <script defer src="simulation/physics.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><span></span></span>
+        <div class="brand-type">
+          <h1>Soft <span>/</span> Lab</h1>
+          <p>PBD · XPBD 연체 시뮬레이션</p>
         </div>
-        <span class="hint">빈 공간 드래그 · 카메라 회전<br>스크롤 · 확대 / 축소</span>
       </div>
-    </section>
+      <p class="runtime">C++20 <i aria-hidden="true"></i> WebAssembly</p>
+    </header>
 
-    <aside class="panel" aria-label="시뮬레이션 설정">
-      <div class="panel-title"><h2>실험 설정</h2><span class="tag">LIVE</span></div>
+    <main class="workspace">
+      <section class="stage" aria-labelledby="stage-title">
+        <div class="stage-header">
+          <h2 id="stage-title">3D 시뮬레이션</h2>
+          <div class="stage-status">
+            <span class="stage-badge" id="mode-badge">XPBD</span>
+            <span id="simulation-status" data-state="loading" role="status">초기화 중</span>
+          </div>
+        </div>
 
-      <section class="section">
-        <h3>01 — SOLVER</h3>
-        <div class="segmented" aria-label="물리 알고리즘"><button id="mode-pbd" aria-pressed="false">PBD</button><button id="mode-xpbd" aria-pressed="true">XPBD</button></div>
-        <p class="description" id="mode-description">Compliance로 재질의 유연함을 조절합니다.</p>
+        <div class="canvas-frame">
+          <div
+            id="viewport"
+            role="group"
+            aria-label="시뮬레이션 장면"
+            aria-describedby="view-hint"
+          ></div>
+          <p id="view-hint" class="view-hint">
+            <span>물체 드래그 · 배경 드래그로 회전</span>
+            <span class="hint-pointer"> · 스크롤로 확대·축소</span>
+            <span class="hint-touch"> · 두 손가락으로 확대·축소</span>
+          </p>
+          <div id="error-banner" role="alert" hidden></div>
+        </div>
 
-        <label class="range-label" for="Slider01">시간 간격 <output id="SliderValue01">0.0167 s</output></label>
-        <input id="Slider01" type="range" min="0" max="100" value="16.667" step="0.001">
+        <div class="stage-footer">
+          <div class="transport" role="group" aria-label="시뮬레이션 조작">
+            <button
+              id="run-button"
+              type="button"
+              aria-pressed="false"
+              title="실행 / 일시정지 (Space)"
+            >
+              <i class="play-icon" aria-hidden="true"></i><span id="run-label">실행</span>
+            </button>
+            <button id="step-button" type="button" title="한 스텝 진행 (N)" disabled>
+              한 스텝
+            </button>
+            <button
+              id="restart-button"
+              type="button"
+              title="장애물을 유지하고 물체를 초기화합니다 (R)"
+            >
+              초기화
+            </button>
+          </div>
+          <div class="view-tools" role="group" aria-label="카메라와 보기">
+            <button id="camera-reset" type="button" title="카메라를 처음 위치로 되돌립니다 (C)">
+              뷰 복원
+            </button>
+            <button id="view-expand" type="button" title="뷰포트를 전체 화면으로 표시합니다 (F)">
+              전체 화면
+            </button>
+          </div>
+        </div>
 
-        <label class="range-label" for="Slider02">서브스텝 <output id="SliderValue02">3</output></label>
-        <input id="Slider02" type="range" min="1" max="10" value="3" step="1">
-
-        <label class="range-label" for="iterations">제약 반복 <output id="iterations-value">2</output></label>
-        <input id="iterations" type="range" min="1" max="8" value="2" step="1">
-
-        <label class="range-label" for="softness">재질 <output id="softness-value">균형</output></label>
-        <input id="softness" type="range" min="0" max="100" value="45" step="1" aria-label="재질 유연함">
-        <p class="description">왼쪽은 단단하게, 오른쪽은 부드럽게.</p>
-
-        <label class="check-row" for="gravity">중력 <input id="gravity" type="checkbox" checked></label>
-
-        <label class="check-row" for="wireframe">메시 구조 보기 <input id="wireframe" type="checkbox"></label>
+        <section class="telemetry" aria-label="실행 진단">
+          <dl class="metrics">
+            <div class="metric">
+              <dt>시뮬레이션 시간 <span>s</span></dt>
+              <dd id="telemetry-time">0.000</dd>
+            </div>
+            <div class="metric">
+              <dt>완료 스텝</dt>
+              <dd id="telemetry-frame">0</dd>
+            </div>
+            <div class="metric metric-physics">
+              <dt>물리 CPU <span>ms / step</span></dt>
+              <dd id="physics-value">—</dd>
+            </div>
+            <div class="metric">
+              <dt>렌더 FPS</dt>
+              <dd id="fps-value">—</dd>
+            </div>
+            <div class="metric">
+              <dt>연체 접촉 보정</dt>
+              <dd id="telemetry-contacts">0</dd>
+            </div>
+            <div class="metric">
+              <dt>작업자 스레드</dt>
+              <dd id="telemetry-workers">0</dd>
+            </div>
+          </dl>
+          <div class="telemetry-detail">
+            <p id="contact-status">후보 검사 0 · 범퍼 0회</p>
+            <span>FPS는 렌더 루프 기준</span>
+          </div>
+        </section>
       </section>
 
-      <section class="section">
-        <h3>02 — OBSTACLES</h3>
-        <button id="add-box">+ Box</button>
-        <select id="obstacle-list" aria-label="선택한 장애물"><option value="">장애물 없음</option></select>
+      <aside class="panel" aria-labelledby="panel-title">
+        <div class="panel-title"><h2 id="panel-title">실험 설정</h2></div>
 
-        <fieldset id="obstacle-properties" disabled>
+        <section class="section preset-section" aria-label="실험 프리셋">
+          <label class="section-heading" for="scene-preset">실험 프리셋</label>
+          <div class="preset-controls">
+            <select id="scene-preset" aria-describedby="preset-summary">
+              <option value="">프리셋 선택</option>
+              <option value="drop">낙하 변형</option>
+              <option value="collision">연체 충돌</option>
+              <option value="bumper">범퍼 반발</option>
+            </select>
+            <button id="preset-apply" type="button" disabled>적용</button>
+          </div>
+          <p class="description" id="preset-summary" aria-live="polite">
+            프리셋을 적용하면 일시정지 상태로 실험 장면을 배치합니다.
+          </p>
+        </section>
 
-          <label class="check-row" for="obstacle-bumper">핀볼 범퍼 <input id="obstacle-bumper" type="checkbox" checked></label>
+        <section class="section" aria-labelledby="solver-title">
+          <h3 id="solver-title">물리 솔버</h3>
+          <div class="segmented" role="group" aria-label="물리 알고리즘">
+            <button id="mode-pbd" type="button" aria-pressed="false">PBD</button
+            ><button id="mode-xpbd" type="button" aria-pressed="true">XPBD</button>
+          </div>
+          <p class="description" id="mode-description">Compliance로 재질의 유연함을 조절합니다.</p>
 
-          <label class="range-label" for="bumper-strength">튕김 세기 <output id="bumper-strength-value">4.0 m/s</output></label>
-          <input id="bumper-strength" type="range" min="0" max="12" value="4" step="0.5">
-          <p class="description">닿는 순간 추가 충격을 줍니다. 다시 닿으면 재발동합니다.</p>
+          <label class="range-label" for="Slider01"
+            >시간 간격 <output id="SliderValue01">0.0167 s</output></label
+          >
+          <input id="Slider01" type="range" min="0" max="100" value="16.667" step="0.001" />
 
-          <fieldset><legend>위치 / XYZ</legend>
-            <div class="control-row"><label for="position-x">X</label><input id="position-x" type="range" min="-8" max="8" step="0.1" value="0" aria-label="위치 X 슬라이더"><input id="position-x-number" type="number" min="-8" max="8" step="0.1" value="0" aria-label="위치 X"></div>
-            <div class="control-row"><label for="position-y">Y</label><input id="position-y" type="range" min="-8" max="8" step="0.1" value="-3" aria-label="위치 Y 슬라이더"><input id="position-y-number" type="number" min="-8" max="8" step="0.1" value="-3" aria-label="위치 Y"></div>
-            <div class="control-row"><label for="position-z">Z</label><input id="position-z" type="range" min="-8" max="8" step="0.1" value="0" aria-label="위치 Z 슬라이더"><input id="position-z-number" type="number" min="-8" max="8" step="0.1" value="0" aria-label="위치 Z"></div>
+          <label class="range-label" for="Slider02"
+            >서브스텝 <output id="SliderValue02">3</output></label
+          >
+          <input id="Slider02" type="range" min="1" max="10" value="3" step="1" />
+
+          <label class="range-label" for="iterations"
+            >제약 반복 <output id="iterations-value">2</output></label
+          >
+          <input id="iterations" type="range" min="1" max="8" value="2" step="1" />
+
+          <label class="range-label" for="softness"
+            >재질 유연함 <output id="softness-value">균형</output></label
+          >
+          <input id="softness" type="range" min="0" max="100" value="45" step="1" />
+
+          <div class="switch-group">
+            <label class="check-row" for="gravity"
+              >중력 <input id="gravity" type="checkbox" role="switch" checked
+            /></label>
+            <label class="check-row" for="wireframe"
+              >와이어프레임 <input id="wireframe" type="checkbox" role="switch"
+            /></label>
+          </div>
+        </section>
+
+        <section class="section object-section" aria-labelledby="object-title">
+          <h3 id="object-title">장면 오브젝트</h3>
+          <div class="object-count">
+            <span><i class="dot soft" aria-hidden="true"></i>연체 <b id="soft-count">0</b></span>
+            <span><i class="dot ball" aria-hidden="true"></i>구체 <b id="ball-count">0</b></span>
+            <span
+              ><i class="dot obstacle" aria-hidden="true"></i>장애물
+              <b id="obstacle-count">0</b></span
+            >
+          </div>
+          <div class="object-tools" role="group" aria-label="오브젝트 추가">
+            <button id="add-soft" type="button">+ 토끼</button>
+            <button id="add-ball" type="button">+ 구체</button>
+            <button id="add-box" type="button">+ 상자</button>
+          </div>
+
+          <label class="range-label" for="obstacle-list">장애물 편집</label>
+          <select id="obstacle-list">
+            <option value="">장애물 없음</option>
+          </select>
+
+          <fieldset id="obstacle-properties" disabled hidden>
+            <label class="check-row" for="obstacle-bumper"
+              >핀볼 범퍼 <input id="obstacle-bumper" type="checkbox" role="switch" checked
+            /></label>
+            <label class="range-label" for="bumper-strength"
+              >튕김 세기 <output id="bumper-strength-value">4.0 m/s</output></label
+            >
+            <input id="bumper-strength" type="range" min="0" max="12" value="4" step="0.5" />
+
+            <fieldset class="axis-group">
+              <legend>위치 / XYZ</legend>
+              <div class="control-row">
+                <label for="position-x">X</label
+                ><input
+                  id="position-x"
+                  type="range"
+                  min="-8"
+                  max="8"
+                  step="0.1"
+                  value="0"
+                  aria-label="위치 X 슬라이더"
+                /><input
+                  id="position-x-number"
+                  type="number"
+                  min="-8"
+                  max="8"
+                  step="0.1"
+                  value="0"
+                  aria-label="위치 X"
+                />
+              </div>
+              <div class="control-row">
+                <label for="position-y">Y</label
+                ><input
+                  id="position-y"
+                  type="range"
+                  min="-8"
+                  max="8"
+                  step="0.1"
+                  value="-3"
+                  aria-label="위치 Y 슬라이더"
+                /><input
+                  id="position-y-number"
+                  type="number"
+                  min="-8"
+                  max="8"
+                  step="0.1"
+                  value="-3"
+                  aria-label="위치 Y"
+                />
+              </div>
+              <div class="control-row">
+                <label for="position-z">Z</label
+                ><input
+                  id="position-z"
+                  type="range"
+                  min="-8"
+                  max="8"
+                  step="0.1"
+                  value="0"
+                  aria-label="위치 Z 슬라이더"
+                /><input
+                  id="position-z-number"
+                  type="number"
+                  min="-8"
+                  max="8"
+                  step="0.1"
+                  value="0"
+                  aria-label="위치 Z"
+                />
+              </div>
+            </fieldset>
+
+            <fieldset class="axis-group" id="box-size">
+              <legend>크기 / XYZ</legend>
+              <div class="control-row">
+                <label for="size-x">X</label
+                ><input
+                  id="size-x"
+                  type="range"
+                  min="0.2"
+                  max="12"
+                  step="0.1"
+                  value="4"
+                  aria-label="가로 슬라이더"
+                /><input
+                  id="size-x-number"
+                  type="number"
+                  min="0.2"
+                  max="12"
+                  step="0.1"
+                  value="4"
+                  aria-label="가로"
+                />
+              </div>
+              <div class="control-row">
+                <label for="size-y">Y</label
+                ><input
+                  id="size-y"
+                  type="range"
+                  min="0.2"
+                  max="12"
+                  step="0.1"
+                  value="2"
+                  aria-label="높이 슬라이더"
+                /><input
+                  id="size-y-number"
+                  type="number"
+                  min="0.2"
+                  max="12"
+                  step="0.1"
+                  value="2"
+                  aria-label="높이"
+                />
+              </div>
+              <div class="control-row">
+                <label for="size-z">Z</label
+                ><input
+                  id="size-z"
+                  type="range"
+                  min="0.2"
+                  max="12"
+                  step="0.1"
+                  value="4"
+                  aria-label="깊이 슬라이더"
+                /><input
+                  id="size-z-number"
+                  type="number"
+                  min="0.2"
+                  max="12"
+                  step="0.1"
+                  value="4"
+                  aria-label="깊이"
+                />
+              </div>
+            </fieldset>
+
+            <button id="remove-obstacle" type="button">선택한 장애물 삭제</button>
           </fieldset>
+        </section>
 
-          <fieldset id="box-size"><legend>Box / 크기</legend>
-            <div class="control-row"><label for="size-x">가로</label><input id="size-x" type="range" min="0.2" max="12" step="0.1" value="4" aria-label="가로 슬라이더"><input id="size-x-number" type="number" min="0.2" max="12" step="0.1" value="4" aria-label="가로"></div>
-            <div class="control-row"><label for="size-y">높이</label><input id="size-y" type="range" min="0.2" max="12" step="0.1" value="2" aria-label="높이 슬라이더"><input id="size-y-number" type="number" min="0.2" max="12" step="0.1" value="2" aria-label="높이"></div>
-            <div class="control-row"><label for="size-z">깊이</label><input id="size-z" type="range" min="0.2" max="12" step="0.1" value="4" aria-label="깊이 슬라이더"><input id="size-z-number" type="number" min="0.2" max="12" step="0.1" value="4" aria-label="깊이"></div>
-          </fieldset>
-
-          <button id="remove-obstacle">선택한 장애물 삭제</button>
-        </fieldset>
-        <p class="description">화면에서 클릭·드래그로 배치합니다. 최대 10개.<br>초기화해도 장애물 배치는 유지됩니다.</p>
-      </section>
-
-      <section class="section">
-        <h3>03 — PERFORMANCE</h3>
-        <div class="metrics"><div class="metric"><strong id="fps-value">—</strong><span>렌더링 FPS</span></div><div class="metric"><strong id="physics-value">—</strong><span>물리 ms / step</span></div></div>
-        <div class="object-count"><span><i class="dot soft"></i>연체 <b id="soft-count">0</b></span><span><i class="dot ball"></i>구 <b id="ball-count">0</b></span><span><i class="dot obstacle"></i>장애물 <b id="obstacle-count">0</b></span></div>
-        <p id="simulation-status" role="status">시뮬레이션을 불러오는 중입니다…</p>
-        <p id="contact-status" class="description">상호 접촉 0 · 후보 검사 0</p>
-        <p class="description">물리 시간은 CPU 계산 기준입니다. FPS는 렌더 루프 기준이며 GPU 완료 시간과 다릅니다.</p>
-      </section>
-    </aside>
-  </main>
-</body>
+        <details class="shortcuts">
+          <summary>키보드 단축키</summary>
+          <dl>
+            <div>
+              <dt><kbd>Space</kbd></dt>
+              <dd>실행 / 일시정지</dd>
+            </div>
+            <div>
+              <dt><kbd>N</kbd></dt>
+              <dd>한 스텝</dd>
+            </div>
+            <div>
+              <dt><kbd>R</kbd></dt>
+              <dd>초기화</dd>
+            </div>
+            <div>
+              <dt><kbd>C</kbd></dt>
+              <dd>뷰 복원</dd>
+            </div>
+            <div>
+              <dt><kbd>F</kbd></dt>
+              <dd>전체 화면</dd>
+            </div>
+          </dl>
+        </details>
+      </aside>
+    </main>
+  </body>
 </html>

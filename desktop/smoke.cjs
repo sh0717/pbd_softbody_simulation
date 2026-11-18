@@ -53,7 +53,7 @@ exports.runSmokeTest = async (window, output, diagnostics) => {
     );
     report.ui = await evaluate(() => window.runSoftLabChecks());
 
-    assert.equal(report.ui.passed, 26);
+    assert.equal(report.ui.passed, 32);
 
     report.checks.push(...report.ui.checks);
     report.parallel = await evaluate(() => {

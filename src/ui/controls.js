@@ -1,3 +1,9 @@
+const PRESET_SUMMARIES = {
+  drop: '두 연체를 높이 올려 낙하와 바닥 충돌로 인한 변형을 관찰합니다.',
+  collision: '중력을 끄고 두 연체를 겹쳐 배치해 연체 접촉의 분리를 관찰합니다.',
+  bumper: '활성 범퍼 위에 구체를 놓고 낙하 후 반발을 관찰합니다.',
+};
+
 // DOM controls read state and invoke app commands; Three.js resources belong to the scene.
 export class ControlPanel {
   constructor({ world, actions, getState, obstacleLimits }) {
@@ -12,6 +18,7 @@ export class ControlPanel {
 
     try {
       this.on('run-button', 'click', () => this.actions.setRunning(!this.getState().running));
+      this.on('step-button', 'click', this.actions.advanceOneStep);
       this.on('restart-button', 'click', this.actions.restart);
       this.on('camera-reset', 'click', this.actions.restoreCamera);
       this.on('add-soft', 'click', () => this.actions.addSoft());
@@ -37,6 +44,8 @@ export class ControlPanel {
       });
       this.on('gravity', 'change', (event) => this.actions.setGravity(event.target.checked));
       this.on('wireframe', 'change', (event) => this.actions.setWireframe(event.target.checked));
+      this.on('scene-preset', 'change', () => this.updatePresetSummary());
+      this.on('preset-apply', 'click', () => this.applyPreset());
       this.on('add-box', 'click', () => this.actions.addObstacle('box'));
       this.on('obstacle-list', 'change', (event) =>
         this.actions.selectObstacle(
@@ -64,11 +73,120 @@ export class ControlPanel {
             this.actions.editObstacle(name, value);
           });
       }
+
+      this.focusButton = this.$('view-expand');
+      this.focusStage = this.focusButton.closest('.stage');
+      this.focusButton.hidden = !document.fullscreenEnabled || !this.focusStage?.requestFullscreen;
+      this.on('view-expand', 'click', () => this.toggleFullscreen());
+      document.addEventListener('fullscreenchange', () => this.updateFullscreen(), {
+        signal: this.events.signal,
+      });
+      window.addEventListener('keydown', (event) => this.handleShortcut(event), {
+        signal: this.events.signal,
+      });
+
+      this.updateFullscreen();
+      this.updatePresetSummary();
     } catch (error) {
       this.dispose();
 
       throw error;
     }
+  }
+
+  handleShortcut(event) {
+    if (
+      event.defaultPrevented ||
+      event.repeat ||
+      event.isComposing ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey
+    )
+      return;
+
+    if (
+      event.target?.closest?.(
+        'input, select, textarea, [contenteditable]:not([contenteditable="false"])',
+      )
+    )
+      return;
+
+    const key = event.key.toLowerCase();
+
+    if (key === ' ' && event.target?.closest?.('button, a, summary, [role="button"]')) return;
+
+    switch (key) {
+      case ' ':
+        this.actions.setRunning(!this.getState().running);
+        break;
+      case 'n':
+        this.actions.advanceOneStep();
+        break;
+      case 'r':
+        this.actions.restart();
+        break;
+      case 'c':
+        this.actions.restoreCamera();
+        break;
+      case 'f':
+        if (this.focusButton.hidden) return;
+
+        this.toggleFullscreen();
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+  }
+
+  async toggleFullscreen() {
+    if (this.focusButton.hidden) return;
+
+    try {
+      if (document.fullscreenElement === this.focusStage) await document.exitFullscreen();
+      else await this.focusStage.requestFullscreen();
+    } catch {
+      this.focusButton.title = '이 브라우저에서 전체 화면을 열 수 없습니다.';
+    }
+  }
+
+  updateFullscreen() {
+    const expanded = document.fullscreenElement === this.focusStage;
+
+    this.focusButton.textContent = expanded ? '전체 화면 종료' : '전체 화면';
+    this.focusButton.setAttribute('aria-pressed', String(expanded));
+  }
+
+  updatePresetSummary(applied) {
+    const preset = this.$('scene-preset').value;
+    const available = Object.hasOwn(PRESET_SUMMARIES, preset);
+    this.$('preset-apply').disabled = !available;
+
+    let summary = available
+      ? PRESET_SUMMARIES[preset]
+      : '박스 배치와 솔버 설정을 유지하고 물체의 배치와 시간을 초기화합니다.';
+
+    if (applied) summary = '배치 완료. 실행 또는 한 스텝으로 관찰하세요.';
+    else if (applied === false)
+      summary =
+        preset === 'bumper'
+          ? '낙하 공간이 있는 활성 범퍼를 추가한 뒤 다시 적용해 주세요.'
+          : '실험에 필요한 연체와 구체를 추가해 주세요.';
+
+    this.$('preset-summary').textContent = summary;
+  }
+
+  applyPreset() {
+    const preset = this.$('scene-preset').value;
+
+    if (Object.hasOwn(PRESET_SUMMARIES, preset))
+      this.updatePresetSummary(this.actions.loadPreset(preset));
+  }
+
+  updateGravity() {
+    this.$('gravity').checked = this.world.gravity[1] !== 0;
   }
 
   updateCounts() {
@@ -129,7 +247,7 @@ export class ControlPanel {
   updateMode() {
     this.$('mode-pbd').setAttribute('aria-pressed', String(this.world.mode === 'pbd'));
     this.$('mode-xpbd').setAttribute('aria-pressed', String(this.world.mode === 'xpbd'));
-    this.$('mode-badge').textContent = `${this.world.mode.toUpperCase()} SOLVER`;
+    this.$('mode-badge').textContent = this.world.mode.toUpperCase();
     this.$('mode-description').textContent =
       this.world.mode === 'xpbd'
         ? 'Compliance로 재질의 유연함을 조절합니다.'
@@ -145,31 +263,37 @@ export class ControlPanel {
   }
 
   updateStatus() {
-    const { running, fps, physicsMs, droppedSteps, bumperHitCount } = this.getState();
+    const { running, fps, physicsMs, completedSteps, droppedSteps, bumperHitCount } =
+      this.getState();
+    const state = running ? (this.world.dt === 0 ? 'held' : 'running') : 'paused';
+    const status = this.$('simulation-status');
+    const labels = { paused: '일시정지', held: '시간 정지', running: '실행 중' };
 
+    if (status.dataset.state !== state) {
+      status.dataset.state = state;
+      status.textContent = labels[state];
+    }
+
+    this.$('step-button').disabled = running || this.world.dt === 0;
     this.$('fps-value').textContent = fps ? Math.round(fps) : '—';
-    this.$('physics-value').textContent = running && this.world.dt > 0 ? physicsMs.toFixed(2) : '—';
-    this.$('simulation-status').textContent =
-      (running
-        ? this.world.dt === 0
-          ? '시간 간격 0 · 물리 정지'
-          : '실행 중 · 실시간 1×'
-        : '일시정지 · 편집 가능') + (droppedSteps ? ` · 부하로 ${droppedSteps}회 지연 생략` : '');
-    this.$('mode-badge').textContent =
-      this.world.mode.toUpperCase() +
-      (fps ? ` · ${Math.round(fps)} FPS` : ' SOLVER') +
-      (running && this.world.dt > 0 ? ` · ${physicsMs.toFixed(2)} ms` : '');
+    this.$('physics-value').textContent = completedSteps ? physicsMs.toFixed(2) : '—';
+    this.$('telemetry-time').textContent = this.world.simulationTime.toFixed(3);
+    this.$('telemetry-frame').textContent = completedSteps.toLocaleString('ko-KR');
+    this.$('telemetry-workers').textContent = this.world.constraintWorkerCount;
 
     const stats = this.world.softContactStats;
+    const contacts = stats.projections ?? stats.contacts ?? 0;
 
+    this.$('telemetry-contacts').textContent = contacts.toLocaleString('ko-KR');
     this.$('contact-status').textContent =
-      `상호 접촉 ${stats.projections || stats.contacts || 0} · 후보 검사 ${stats.candidateTests || 0} · 범퍼 ${bumperHitCount}회`;
+      `후보 검사 ${(stats.candidateTests ?? 0).toLocaleString('ko-KR')} · 범퍼 ${bumperHitCount.toLocaleString('ko-KR')}회` +
+      (droppedSteps ? ` · 스텝 ${droppedSteps.toLocaleString('ko-KR')}회 생략` : '');
   }
 
   updateRunning() {
     const { running } = this.getState();
 
-    this.$('run-button').textContent = running ? 'Ⅱ 일시정지' : '▶ 실행';
+    this.$('run-label').textContent = running ? '일시정지' : '실행';
     this.$('run-button').setAttribute('aria-pressed', String(running));
     this.updateStatus();
   }

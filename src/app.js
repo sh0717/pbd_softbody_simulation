@@ -29,7 +29,9 @@ function fail(error) {
   document.getElementById('error-banner').hidden = false;
   document.getElementById('error-banner').textContent =
     `실행 오류: ${error.message}. 페이지를 다시 불러와 주세요.`;
-  document.getElementById('simulation-status').textContent = '실행할 수 없습니다.';
+  const status = document.getElementById('simulation-status');
+  status.dataset.state = 'error';
+  status.textContent = '실행 오류';
   console.error(error);
 }
 
@@ -60,7 +62,7 @@ async function start() {
     mode: 'xpbd',
     bounds: 10,
     gravity: [0, -9.81, 0],
-    restitution: 0.25,
+    restitution: 0.5,
     damping: 0.25,
   });
 
@@ -78,9 +80,10 @@ async function start() {
   let previousFrameMs = null;
   let physicsMs = 0;
   let lastStatusUpdateMs = 0;
-  let fpsSampleStartMs = 0;
+  let fpsSampleStartMs = performance.now();
   let fpsFrames = 0;
   let fps = 0;
+  let completedSteps = 0;
   let droppedSteps = 0;
   let bumperHitCount = 0;
 
@@ -91,10 +94,14 @@ async function start() {
     onFatal: fail,
     onTimingReset: () => {
       accumulatedSeconds = 0;
+      previousFrameMs = null;
     },
     onRestart: () => {
+      physicsMs = 0;
+      completedSteps = 0;
       droppedSteps = 0;
       bumperHitCount = 0;
+      ui.updateStatus();
     },
   });
 
@@ -104,6 +111,7 @@ async function start() {
     running: experiment.running,
     fps,
     physicsMs,
+    completedSteps,
     droppedSteps,
     bumperHitCount,
   });
@@ -112,7 +120,7 @@ async function start() {
     world,
     getState,
     obstacleLimits: (obstacle) => world.getObstacleLimits(obstacle),
-    actions: experiment.actions,
+    actions: { ...experiment.actions, advanceOneStep },
   });
   experiment.ui = ui;
   picking = new PickingController({
@@ -155,18 +163,34 @@ async function start() {
   function stepPhysics(nowMs) {
     const startedMs = performance.now();
 
-    world.step();
+    if (!world.step()) return false;
+
+    const elapsedMs = performance.now() - startedMs;
+
+    completedSteps++;
 
     for (const hit of world.bumperHits) {
       view.flashObstacle(hit.obstacle, nowMs);
       bumperHitCount++;
     }
 
-    const elapsedMs = performance.now() - startedMs;
-
     physicsMs = physicsMs
       ? physicsMs * PHYSICS_HISTORY_WEIGHT + elapsedMs * PHYSICS_SAMPLE_WEIGHT
       : elapsedMs;
+
+    return true;
+  }
+
+  function advanceOneStep() {
+    if (disposed || experiment.running || world.dt === 0) return;
+
+    try {
+      if (stepPhysics(performance.now())) experiment.syncBodies();
+
+      ui.updateStatus();
+    } catch (error) {
+      fail(error);
+    }
   }
 
   // Scheduling is measured in seconds; requestAnimationFrame and status samples use ms.

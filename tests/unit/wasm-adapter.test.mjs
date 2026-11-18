@@ -403,6 +403,32 @@ test('raw native validation returns consumable status without C++ exception help
   }
 });
 
+test('native bodyArray keeps shared, soft-only and unknown field contracts', async () => {
+  const native = await require('../../wasm/pbd_core.js')();
+  const world = native.createWorld({});
+
+  try {
+    const ball = native.addBall(world, 1, [2, 3, 4], [0, 0, 0], {});
+    const soft = native.addSoft(world, bunny, [0, 0, 0], {});
+    const center = native.bodyArray(ball, 14);
+
+    center[0] = 5;
+    assert.deepEqual(Array.from(native.bodyArray(ball, 0)), [5, 3, 4]);
+
+    for (let field = 6; field <= 13; field++) {
+      assert.equal(native.bodyArray(ball, field), undefined);
+      assert.ok(ArrayBuffer.isView(native.bodyArray(soft, field)));
+    }
+
+    for (const body of [ball, soft]) {
+      assert.equal(native.bodyArray(body, 17), undefined);
+      assert.equal(native.takeError(), null);
+    }
+  } finally {
+    native.destroyWorld(world);
+  }
+});
+
 test('native owner registries tolerate duplicate destruction and reject expired owner handles', async () => {
   const native = await require('../../wasm/pbd_core.js')();
   const world = native.createWorld({});

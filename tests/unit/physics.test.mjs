@@ -67,6 +67,20 @@ test('tetraVolume preserves orientation and translation invariance', () => {
   near(tetraVolume(shifted), 1 / 6);
 });
 
+test('tetraVolume rejects indices outside the complete vertex count', () => {
+  const padded = [...tetraData.verts, 1, 1];
+
+  near(tetraVolume(padded), 1 / 6);
+
+  // Wasm32에서도 오프셋 계산 전에 정점 인덱스를 검사해야 합니다.
+  for (const index of [4, 0x55555556]) {
+    assert.throws(() => tetraVolume(padded, 0, 1, 2, index), {
+      name: 'TypeError',
+      message: 'Invalid tetrahedron indices',
+    });
+  }
+});
+
 for (const orientation of ['positive', 'negative']) {
   for (const height of [0.2, 1.8, -0.3]) {
     test(`signed volume restores ${orientation} tetrahedron from height ${height}`, () => {

@@ -4,7 +4,7 @@ module.exports = {
   artifactStem: 'PBD-Softbody-Lab',
   scheme: 'pbd',
   entry: 'index.html',
-  backgroundColor: '#fafbf7',
+  backgroundColor: '#0b1118',
   csp: "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
   assets: [
     'index.html',

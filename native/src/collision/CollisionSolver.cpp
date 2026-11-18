@@ -199,10 +199,21 @@ void FCollisionSolver::SolveBallContacts()
 
 void FCollisionSolver::CollectSoftPairs()
 {
+	SoftParticipantFlags.assign(SoftBodies.size(), 0);
+
 	for (FSoftBody* SoftBody : SoftBodies)
 	{
 		SoftBody->UpdateBounds();
 	}
+
+	const auto RegisterParticipant = [this](std::size_t BodyIndex)
+	{
+		if (SoftParticipantFlags[BodyIndex] == 0)
+		{
+			SoftParticipantFlags[BodyIndex] = 1;
+			SoftContactParticipants.push_back(SoftBodies[BodyIndex]);
+		}
+	};
 
 	for (std::size_t FirstBodyIndex = 0; FirstBodyIndex < SoftBodies.size(); ++FirstBodyIndex)
 	{
@@ -224,14 +235,8 @@ void FCollisionSolver::CollectSoftPairs()
 			}
 
 			SoftPairs.emplace_back(BodyA, BodyB);
-
-			for (FSoftBody* Body : {BodyA, BodyB})
-			{
-				if (std::find(SoftContactParticipants.begin(), SoftContactParticipants.end(), Body) == SoftContactParticipants.end())
-				{
-					SoftContactParticipants.push_back(Body);
-				}
-			}
+			RegisterParticipant(FirstBodyIndex);
+			RegisterParticipant(SecondBodyIndex);
 		}
 	}
 }

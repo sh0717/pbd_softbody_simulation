@@ -15,10 +15,81 @@ async function runSoftLabChecks() {
     $(id).value = String(value);
     $(id).dispatchEvent(new Event(type, { bubbles: true }));
   };
+  const key = (target, value) =>
+    target.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true }));
+  const applyPreset = (name) => {
+    input('scene-preset', name, 'change');
+    $('preset-apply').click();
+  };
+  const initialCamera = app.camera.position.clone();
 
   app.setRunning(false);
 
   const state = () => world.bodies.flatMap((body) => Array.from(body.positions));
+
+  key(document.body, ' ');
+  const started = app.running && $('run-button').getAttribute('aria-pressed') === 'true';
+  key(document.body, ' ');
+  check('Space toggles playback and reflects its state', started && !app.running);
+
+  const beforeInput = world.simulationTime;
+  key($('Slider01'), 'n');
+  check('Keyboard shortcuts leave form inputs alone', world.simulationTime === beforeInput);
+
+  $('step-button').click();
+  key(document.body, 'n');
+  check(
+    'Button and keyboard advance exactly two paused steps and update telemetry',
+    Math.abs(world.simulationTime - beforeInput - 2 * world.dt) < 1e-10 &&
+      !app.running &&
+      $('telemetry-time').textContent === world.simulationTime.toFixed(3) &&
+      $('telemetry-frame').textContent === '2' &&
+      Number.isFinite(Number($('physics-value').textContent)),
+  );
+
+  const savedObstacles = world.obstacles.slice();
+  const savedBoxLayout = JSON.stringify(savedObstacles);
+  const savedTiming = [world.dt, world.substeps, world.solverIterations];
+  applyPreset('drop');
+  const dropPose = JSON.stringify(state());
+  $('step-button').click();
+  $('mode-pbd').click();
+  applyPreset('drop');
+  check(
+    'Drop preset replays the same pose in either solver while preserving the scene',
+    JSON.stringify(state()) === dropPose &&
+      !app.running &&
+      world.mode === 'pbd' &&
+      world.simulationTime === 0 &&
+      $('telemetry-frame').textContent === '0' &&
+      JSON.stringify(savedTiming) ===
+        JSON.stringify([world.dt, world.substeps, world.solverIterations]) &&
+      world.obstacles.every((obstacle, index) => obstacle === savedObstacles[index]) &&
+      JSON.stringify(world.obstacles) === savedBoxLayout,
+  );
+
+  $('mode-xpbd').click();
+  applyPreset('collision');
+  $('step-button').click();
+  check(
+    'Contact preset disables gravity and produces projected soft contacts',
+    !$('gravity').checked && world.gravity[1] === 0 && world.softContactStats.contacts > 0,
+  );
+
+  applyPreset('bumper');
+  let bumperHit = false;
+
+  for (let i = 0; i < 60 && !bumperHit; i++) {
+    $('step-button').click();
+    bumperHit = world.bumperHits.some((hit) => hit.body === world.balls[0]);
+  }
+
+  check(
+    'Bumper preset drops the original sphere onto a powered box and records its hit',
+    $('gravity').checked && bumperHit && $('contact-status').textContent.includes('범퍼 1회'),
+  );
+  $('restart-button').click();
+
   const initial = state();
 
   $('run-button').click();
@@ -49,7 +120,10 @@ async function runSoftLabChecks() {
   await wait(100);
   check(
     'dt=0 leaves finite positions unchanged',
-    world.dt === 0 && JSON.stringify(state()) === JSON.stringify(frozen),
+    world.dt === 0 &&
+      JSON.stringify(state()) === JSON.stringify(frozen) &&
+      $('step-button').disabled &&
+      $('simulation-status').dataset.state === 'held',
   );
   $('run-button').click();
   input('Slider01', 30);
@@ -159,7 +233,7 @@ async function runSoftLabChecks() {
   check('Gravity switch updates acceleration', world.gravity[1] === 0);
   app.camera.position.set(20, 4, 1);
   $('camera-reset').click();
-  check('Camera reset restores default view', Math.abs(app.camera.position.x - 10.5) < 1e-6);
+  check('Camera reset restores default view', app.camera.position.distanceTo(initialCamera) < 1e-6);
 
   while (world.obstacles.length) {
     input('obstacle-list', world.obstacles[0].identifier, 'change');

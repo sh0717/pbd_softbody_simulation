@@ -75,6 +75,9 @@ private:
 	// SoftPairs에 등장하는 몸체를 중복 없이 보관합니다. 접촉 수집 전에 공간 캐시를 한 번씩 준비합니다.
 	std::vector<FSoftBody*> SoftContactParticipants;
 
+	// SoftBodies와 같은 인덱스를 사용하며 현재 쌍 수집에서 참여 목록에 추가한 몸체를 표시합니다.
+	std::vector<std::uint8_t> SoftParticipantFlags;
+
 	// 모든 연체 쌍에서 모은 투영 전 접촉입니다. 전체 수집을 마친 뒤 순서대로 위치를 보정합니다.
 	std::vector<FContact> SoftContacts;
 

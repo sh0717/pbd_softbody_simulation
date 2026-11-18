@@ -134,7 +134,7 @@ private:
 	// 완료한 서브스텝의 누적 시간입니다. 단위는 초이며 Reset에서 0으로 복원합니다.
 	double SimulationTime = 0;
 
-	// SolveIteration 동안 Bodies가 소유한 연체를 빌립니다. 몸체 추가 후 다음 반복에서 다시 구성합니다.
+	// 양수 Step마다 Bodies가 소유한 연체를 등록 순서로 모아 모든 제약 반복에서 빌립니다.
 	std::vector<FSoftBody*> ConstraintBodies;
 
 	// 마지막에 선언하여 몸체와 빌린 목록보다 먼저 작업자를 종료·join합니다.
